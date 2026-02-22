@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mini Games — Play with Friends</title>
+  <link rel="stylesheet" href="/play/css/style.css?v=6">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- HOME SCREEN -->
+    <div id="screen-home" class="screen active">
+      <div class="home-hero">
+        <div class="logo">🎮</div>
+        <h1>Mini Games</h1>
+        <p class="subtitle">Quick games with friends — no login needed</p>
+      </div>
+      <div class="home-actions">
+        <input type="text" id="player-name" placeholder="Your name" maxlength="20" autocomplete="off">
+        <button id="btn-create" class="btn btn-primary">Create Room</button>
+        <div class="divider"><span>or</span></div>
+        <div class="join-row">
+          <input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" style="text-transform:uppercase">
+          <button id="btn-join" class="btn btn-secondary">Join</button>
+        </div>
+      </div>
+      <div id="home-error" class="error-msg"></div>
+    </div>
+
+    <!-- LOBBY SCREEN -->
+    <div id="screen-lobby" class="screen">
+      <div class="lobby-header">
+        <h2>Room <span id="room-code" class="code-badge"></span></h2>
+        <button id="btn-share" class="btn btn-small">📋 Copy Link</button>
+      </div>
+      <div class="players-section">
+        <div class="players-header">
+          <h3>Players</h3>
+          <button id="btn-add-bot" class="btn btn-small btn-bot" style="display:none">🤖 Add Bot</button>
+        </div>
+        <ul id="player-list"></ul>
+      </div>
+      <div id="game-picker" class="game-picker">
+        <h3>Choose a Game</h3>
+        <div id="game-grid" class="game-grid"></div>
+      </div>
+      <button id="btn-start" class="btn btn-primary btn-large" style="display:none">Start Game</button>
+      <p id="lobby-waiting" class="waiting-text">Waiting for host to start...</p>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="screen-game" class="screen">
+      <div class="game-hud">
+        <div id="game-title" class="game-title"></div>
+        <div id="game-round" class="game-round"></div>
+      </div>
+      <div id="game-container" class="game-container"></div>
+    </div>
+
+    <!-- RESULTS SCREEN -->
+    <div id="screen-results" class="screen">
+      <div class="results-content">
+        <h2>🏆 Final Scores</h2>
+        <div id="results-podium" class="podium"></div>
+        <ol id="results-list" class="results-list"></ol>
+        <button id="btn-lobby" class="btn btn-primary" style="display:none">Back to Lobby</button>
+        <p id="results-waiting" class="waiting-text">Waiting for host...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <script src="/play/js/main.js?v=6"></script>
+  <script src="/play/js/games/reaction-race.js?v=6"></script>
+  <script src="/play/js/games/trivia-blitz.js?v=6"></script>
+  <script src="/play/js/games/tap-frenzy.js?v=6"></script>
+  <script src="/play/js/games/word-scramble.js?v=6"></script>
+  <script src="/play/js/games/emoji-match.js?v=6"></script>
+  <script src="/play/js/games/math-blitz.js?v=6"></script>
+  <script src="/play/js/games/simon-says.js?v=6"></script>
+</body>
+</html>
