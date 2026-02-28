@@ -92,6 +92,7 @@ function scheduleBotActions(room, io) {
       case 'emoji-match':   startEmojiBot(room, io, botId, bot, sock); break;
       case 'math-blitz':    startMathBot(room, io, botId, bot, sock); break;
       case 'simon-says':    startSimonBot(room, io, botId, bot, sock); break;
+      case 'color-clash':   startColorClashBot(room, io, botId, bot, sock); break;
     }
   });
 }
@@ -407,6 +408,30 @@ function startSimonBot(room, io, botId, bot, sock) {
       });
     }
   }, 200);
+  addTimer(room, poll);
+}
+
+// ─── Color Clash Bot ───
+function startColorClashBot(room, io, botId, bot, sock) {
+  let lastRound = 0;
+  const poll = setInterval(() => {
+    const gs = room.gameState;
+    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+
+    if (gs.phase === 'showing' && gs.round !== lastRound && !gs.answers.has(botId)) {
+      lastRound = gs.round;
+      const correct = diffChance(bot.difficulty, 0.5, 0.75, 0.93);
+      const choice = correct ? gs.inkColor : gs.word; // wrong = picks the word (classic Stroop error)
+      const delay = diffRange(bot.difficulty, [2000, 4000], [1000, 2500], [400, 1200]);
+
+      const t = setTimeout(() => {
+        if (room.gameState?.phase === 'showing' && !room.gameState.answers.has(botId)) {
+          room.currentGame.onEvent(room, sock, 'answer', { choice }, io);
+        }
+      }, delay);
+      addTimer(room, t);
+    }
+  }, 150);
   addTimer(room, poll);
 }
 
