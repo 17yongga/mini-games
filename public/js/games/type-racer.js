@@ -149,7 +149,7 @@ window.GameClients['type-racer'] = {
           if (this._throttleTimer) { clearTimeout(this._throttleTimer); this._throttleTimer = null; }
 
           this.sentenceEl.textContent = data.sentence;
-          this.inputArea.style.display = '';
+          this.inputArea.style.display = 'block';
           this.inputEl.value = '';
           this.inputEl.disabled = false;
           this.feedbackEl.textContent = '';
