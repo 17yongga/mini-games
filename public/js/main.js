@@ -262,6 +262,24 @@
     const client = window.GameClients[gameId];
     if (client?.init) {
       client.init($('#game-container'), socket, state, players);
+    } else {
+      // Game client not in registry — dynamically load it (handles stale cached index.html)
+      $('#game-container').innerHTML = '<div class="game-status info">Loading game...</div>';
+      const script = document.createElement('script');
+      script.src = `/play/js/games/${gameId}.js?cb=${Date.now()}`;
+      script.onload = () => {
+        const c = window.GameClients[gameId];
+        if (c?.init) {
+          $('#game-container').innerHTML = '';
+          c.init($('#game-container'), socket, state, players);
+        } else {
+          $('#game-container').innerHTML = `<div class="game-status warning">⚠️ ${gameName} failed to load. Please hard-refresh.</div>`;
+        }
+      };
+      script.onerror = () => {
+        $('#game-container').innerHTML = `<div class="game-status warning">⚠️ Could not fetch ${gameName} script. Please hard-refresh.</div>`;
+      };
+      document.head.appendChild(script);
     }
   });
 
@@ -369,6 +387,18 @@
           const client = window.GameClients[res.gameId];
           if (client?.init) {
             client.init($('#game-container'), socket, state, res.players);
+          } else {
+            // Dynamically load the game script if not already registered
+            const script = document.createElement('script');
+            script.src = `/play/js/games/${res.gameId}.js?cb=${Date.now()}`;
+            script.onload = () => {
+              const c = window.GameClients[res.gameId];
+              if (c?.init) {
+                $('#game-container').innerHTML = '';
+                c.init($('#game-container'), socket, state, res.players);
+              }
+            };
+            document.head.appendChild(script);
           }
           toast('Reconnected!');
         } else {
