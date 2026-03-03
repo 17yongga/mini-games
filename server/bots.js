@@ -93,6 +93,7 @@ function scheduleBotActions(room, io) {
       case 'math-blitz':    startMathBot(room, io, botId, bot, sock); break;
       case 'simon-says':    startSimonBot(room, io, botId, bot, sock); break;
       case 'color-clash':   startColorClashBot(room, io, botId, bot, sock); break;
+      case 'type-racer':    startTypeRacerBot(room, io, botId, bot, sock); break;
     }
   });
 }
@@ -432,6 +433,40 @@ function startColorClashBot(room, io, botId, bot, sock) {
       addTimer(room, t);
     }
   }, 150);
+  addTimer(room, poll);
+}
+
+// ─── Type Racer Bot ───
+// Bots simulate finishing the sentence after a difficulty-scaled delay.
+// No need to fake keystroke-by-keystroke — just emit 'finish' at the right time.
+function startTypeRacerBot(room, io, botId, bot, sock) {
+  let lastRound = 0;
+  const poll = setInterval(() => {
+    const gs = room.gameState;
+    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+
+    if (gs.phase === 'typing' && gs.round !== lastRound) {
+      lastRound = gs.round;
+      const sentence = gs.sentences[gs.round - 1];
+      if (!sentence) return;
+
+      // Difficulty-scaled finish time and WPM accuracy
+      // delay = ms before bot finishes typing
+      const delay = diffRange(bot.difficulty, [18000, 25000], [10000, 17000], [3000, 9000]);
+
+      const t = setTimeout(() => {
+        if (room.gameState?.phase !== 'typing' || room.gameState.round !== lastRound) return;
+        if (gs.finishers && gs.finishers.some(f => f.id === botId)) return;
+
+        // Bots always type correctly — difficulty affects speed, not accuracy
+        room.currentGame.onEvent(room, sock, 'finish', {
+          typed: sentence,
+          elapsed: Math.round(delay),
+        }, io);
+      }, delay);
+      addTimer(room, t);
+    }
+  }, 200);
   addTimer(room, poll);
 }
 

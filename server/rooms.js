@@ -109,6 +109,10 @@ function rejoinRoom(socket, code, name) {
         gs.pairsFound.set(socket.id, gs.pairsFound.get(oldId));
         gs.pairsFound.delete(oldId);
       }
+      if (gs.progress instanceof Map && gs.progress.has(oldId)) {
+        gs.progress.set(socket.id, gs.progress.get(oldId));
+        gs.progress.delete(oldId);
+      }
     }
 
     socket.join(code);

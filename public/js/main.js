@@ -278,6 +278,11 @@
     if (client?.onTick) client.onTick(data, socket, state);
   });
 
+  socket.on('game:progress', (data) => {
+    const client = window.GameClients[state.currentGame];
+    if (client?.onProgress) client.onProgress(data, socket, state);
+  });
+
   socket.on('game:end', ({ scores }) => {
     showScreen('results');
     renderResults(scores);
