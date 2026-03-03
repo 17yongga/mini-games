@@ -696,6 +696,19 @@ input[type="text"]::placeholder { color: var(--text-dim); }
 }
 
 /* ─── Type Racer ─────────────────────────────────────────────────────────── */
+
+/* Type Racer root — stretch to full container width */
+#game-container .game-status,
+.tr-sentence,
+.tr-input-area,
+.tr-feedback,
+.tr-progress-list,
+.math-timer-bar {
+  width: 100%;
+  box-sizing: border-box;
+  align-self: stretch;
+}
+
 .tr-sentence {
   font-size: 22px;
   line-height: 1.7;

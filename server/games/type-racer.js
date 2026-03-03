@@ -239,6 +239,32 @@ module.exports = {
     room.state = 'results';
   },
 
+  // Called by server on player rejoin — sends current round state so they're not stuck on blank screen
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'typing') {
+      const sentence = gs.sentences[gs.round - 1];
+      const elapsed = Date.now() - gs.roundStart;
+      const remaining = Math.max(5000, ROUND_TIME - elapsed);
+      return {
+        phase: 'typing',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        sentence,
+        timeLimit: remaining,
+      };
+    }
+    if (gs.phase === 'result') {
+      return {
+        phase: 'result',
+        round: gs.round,
+        finishers: gs.finishers,
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._trTimers) {
       room._trTimers.forEach(t => { clearTimeout(t); clearInterval(t); });

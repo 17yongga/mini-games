@@ -19,9 +19,17 @@ const io = new Server(server, {
   connectTimeout: 20000
 });
 
-// Serve static files
-app.use('/play', express.static(path.join(__dirname, '..', 'public')));
+// Serve static files — HTML files get no-cache to prevent iOS Safari serving stale builds
+const htmlNoCache = (res, filePath) => {
+  if (filePath.endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+};
+app.use('/play', express.static(path.join(__dirname, '..', 'public'), { setHeaders: htmlNoCache }));
 app.get('/play', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 app.get('/play/health', (req, res) => res.json({ status: 'ok', games: games.list().length }));
@@ -89,6 +97,14 @@ io.on('connection', (socket) => {
     }
 
     cb?.(response);
+
+    // Re-emit current game state to the rejoining player so they're not stuck on a blank screen
+    if (room.state === 'playing' && room.currentGame?.getReconnectState) {
+      const reconnectState = room.currentGame.getReconnectState(room);
+      if (reconnectState) {
+        setTimeout(() => socket.emit('game:state', reconnectState), 700);
+      }
+    }
 
     // Notify others
     socket.to(code).emit('room:playerRejoined', {
