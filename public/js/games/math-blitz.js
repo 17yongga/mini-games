@@ -1,5 +1,16 @@
 // Math Blitz — client
 window.GameClients['math-blitz'] = {
+  tutorial: {
+    duration: 4500,
+    steps: [
+      { at: 0,    type: 'html',    content: '<div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px">Solve it fast</div><div style="font-size:2.8rem;font-weight:900;margin-top:8px">14 × 3 = ?</div>' },
+      { at: 800,  type: 'html',    content: '<div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px">Solve it fast</div><div style="font-size:2.8rem;font-weight:900;margin-top:8px">14 × 3 = ?</div><div style="margin-top:14px;background:rgba(255,255,255,0.08);border-radius:10px;padding:10px 20px;display:inline-block;font-size:1.5rem;font-weight:700">42</div>' },
+      { at: 1400, type: 'score',   player: 'Ghost Gary', points: 15 },
+      { at: 2200, type: 'html',    content: '<div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px">Next question</div><div style="font-size:2.8rem;font-weight:900;margin-top:8px">√64 = ?</div>' },
+      { at: 3000, type: 'score',   player: 'Ghost Maya', points: 15 },
+      { at: 3800, type: 'caption', content: 'Type the answer and hit Enter — harder problems = more points!' }
+    ]
+  },
   init(container, socket) {
     this.container = container;
     this.socket = socket;

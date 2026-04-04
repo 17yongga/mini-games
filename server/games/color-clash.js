@@ -191,6 +191,34 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'showing') {
+      const elapsed = Date.now() - gs.roundStart;
+      const timeLimit = gs.timeLimit;
+      const remaining = Math.max(0, timeLimit - elapsed);
+      return {
+        phase: 'showing',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        word: gs.word,
+        inkColor: gs.inkColor,
+        options: gs.options,
+        timeLimit: remaining
+      };
+    }
+    if (gs.phase === 'result') {
+      return {
+        phase: 'result',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        results: gs.results
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._ccTimers) {
       room._ccTimers.forEach(t => { clearTimeout(t); clearInterval(t); });

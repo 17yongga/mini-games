@@ -230,6 +230,34 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'playing') {
+      return {
+        phase: 'playing',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        board: gs.board,
+        revealed: gs.revealed,
+        boardSize: gs.boardSize,
+        currentTurn: gs.currentTurn,
+        firstPick: gs.firstPick,
+        secondPick: gs.secondPick,
+        locked: gs.locked
+      };
+    }
+    if (gs.phase === 'roundResult') {
+      return {
+        phase: 'roundResult',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        roundWinner: gs.roundWinner
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._emTimers) {
       room._emTimers.forEach(t => clearTimeout(t));

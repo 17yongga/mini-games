@@ -127,6 +127,34 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'ready') {
+      return {
+        phase: 'ready',
+        round: gs.round,
+        totalRounds: gs.totalRounds
+      };
+    }
+    if (gs.phase === 'go') {
+      return {
+        phase: 'go',
+        round: gs.round,
+        totalRounds: gs.totalRounds
+      };
+    }
+    if (gs.phase === 'result') {
+      return {
+        phase: 'result',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        roundResults: gs.roundResults
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._rrTimers) {
       room._rrTimers.forEach(t => clearTimeout(t));

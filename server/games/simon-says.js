@@ -251,6 +251,36 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'showing') {
+      const sequence = gs.fullSequence.slice(0, gs.round);
+      return {
+        phase: 'showing',
+        round: gs.round,
+        sequence: sequence
+      };
+    }
+    if (gs.phase === 'input') {
+      const sequence = gs.fullSequence.slice(0, gs.round);
+      return {
+        phase: 'input',
+        round: gs.round,
+        sequence: sequence,
+        inputProgress: gs.inputProgress
+      };
+    }
+    if (gs.phase === 'result') {
+      return {
+        phase: 'result',
+        round: gs.round,
+        eliminatedThisRound: gs.eliminatedThisRound
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._ssTimers) {
       room._ssTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
