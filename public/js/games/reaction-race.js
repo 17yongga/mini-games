@@ -1,5 +1,17 @@
 // Reaction Race — client
 window.GameClients['reaction-race'] = {
+  tutorial: {
+    duration: 4500,
+    steps: [
+      { at: 0,    type: 'html',    content: '<div style="font-size:2.5rem">⏳</div><div style="font-size:1.1rem;font-weight:700;margin-top:8px">Wait for the signal...</div>' },
+      { at: 900,  type: 'flash',   content: '🟢 TAP NOW!' },
+      { at: 1100, type: 'score',   player: 'Ghost Gary', points: 10, time: '0.31s' },
+      { at: 1800, type: 'html',    content: '<div style="font-size:2.5rem">⏳</div><div style="font-size:1.1rem;font-weight:700;margin-top:8px">Wait again...</div>' },
+      { at: 2600, type: 'flash',   content: '🟢 TAP NOW!' },
+      { at: 2900, type: 'score',   player: 'Ghost Maya', points: 10, time: '0.28s' },
+      { at: 3600, type: 'caption', content: 'Tap the instant the zone turns green — fastest finger wins!' }
+    ]
+  },
   init(container, socket) {
     this.container = container;
     this.socket = socket;

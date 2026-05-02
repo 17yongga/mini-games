@@ -1,5 +1,15 @@
 // Trivia Blitz — client
 window.GameClients['trivia-blitz'] = {
+  tutorial: {
+    duration: 5000,
+    steps: [
+      { at: 0,    type: 'html',    content: '<div style="font-size:0.9rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px">Question</div><div style="font-size:1.1rem;font-weight:700;margin-top:10px">What is the capital of France?</div>' },
+      { at: 700,  type: 'html',    content: '<div style="font-size:0.9rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px">Question</div><div style="font-size:1.1rem;font-weight:700;margin-top:10px">What is the capital of France?</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;max-width:280px"><div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;text-align:center;font-size:0.88rem">London</div><div style="background:rgba(63,185,80,0.25);border:2px solid #3fb950;border-radius:10px;padding:10px;text-align:center;font-size:0.88rem;font-weight:700">Paris ✓</div><div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;text-align:center;font-size:0.88rem">Berlin</div><div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;text-align:center;font-size:0.88rem">Madrid</div></div>' },
+      { at: 2000, type: 'score',   player: 'Ghost Gary', points: 10 },
+      { at: 2800, type: 'score',   player: 'Ghost Maya', points: 10 },
+      { at: 3900, type: 'caption', content: 'First correct answer scores the point — speed matters!' }
+    ]
+  },
   init(container, socket) {
     this.container = container;
     this.socket = socket;

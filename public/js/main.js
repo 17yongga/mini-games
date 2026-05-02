@@ -259,46 +259,87 @@
     $('#game-title').textContent = gameName;
     $('#game-container').innerHTML = '';
 
-    const client = window.GameClients[gameId];
-    if (client?.init) {
+    // Buffer incoming game events during tutorial
+    const eventBuffer = [];
+    socket.off('game:state');
+    socket.off('game:tick');
+    socket.off('game:progress');
+    socket.on('game:state', (d) => eventBuffer.push({ type: 'game:state', data: d }));
+    socket.on('game:tick',  (d) => eventBuffer.push({ type: 'game:tick',  data: d }));
+    socket.on('game:progress', (d) => eventBuffer.push({ type: 'game:progress', data: d }));
+
+    const launchGame = (client) => {
+      // Restore real listeners
+      socket.off('game:state');
+      socket.off('game:tick');
+      socket.off('game:progress');
+
+      socket.on('game:state', (data) => {
+        const c = window.GameClients[state.currentGame];
+        if (c && c.onState) c.onState(data, socket, state);
+        if (data.round && data.totalRounds) {
+          $('#game-round').textContent = 'Round ' + data.round + '/' + data.totalRounds;
+        }
+      });
+      socket.on('game:tick', (data) => {
+        const c = window.GameClients[state.currentGame];
+        if (c && c.onTick) c.onTick(data, socket, state);
+      });
+      socket.on('game:progress', (data) => {
+        const c = window.GameClients[state.currentGame];
+        if (c && c.onProgress) c.onProgress(data, socket, state);
+      });
+
+      // Init the real game
       client.init($('#game-container'), socket, state, players);
+
+      // Drain buffered events
+      eventBuffer.forEach(function(ev) {
+        const c = window.GameClients[state.currentGame];
+        if (ev.type === 'game:state') {
+          if (c && c.onState) c.onState(ev.data, socket, state);
+          if (ev.data.round && ev.data.totalRounds) {
+            $('#game-round').textContent = 'Round ' + ev.data.round + '/' + ev.data.totalRounds;
+          }
+        } else if (ev.type === 'game:tick' && c && c.onTick) {
+          c.onTick(ev.data, socket, state);
+        } else if (ev.type === 'game:progress' && c && c.onProgress) {
+          c.onProgress(ev.data, socket, state);
+        }
+      });
+    };
+
+    const runWithClient = (client) => {
+      window.TutorialEngine.run(
+        $('#game-container'),
+        client,
+        gameName,
+        socket, state, players,
+        function() { launchGame(client); }
+      );
+    };
+
+    const client = window.GameClients[gameId];
+    if (client && client.init) {
+      runWithClient(client);
     } else {
-      // Game client not in registry — dynamically load it (handles stale cached index.html)
       $('#game-container').innerHTML = '<div class="game-status info">Loading game...</div>';
       const script = document.createElement('script');
-      script.src = `/play/js/games/${gameId}.js?cb=${Date.now()}`;
-      script.onload = () => {
+      script.src = '/play/js/games/' + gameId + '.js?cb=' + Date.now();
+      script.onload = function() {
         const c = window.GameClients[gameId];
-        if (c?.init) {
+        if (c && c.init) {
           $('#game-container').innerHTML = '';
-          c.init($('#game-container'), socket, state, players);
+          runWithClient(c);
         } else {
-          $('#game-container').innerHTML = `<div class="game-status warning">⚠️ ${gameName} failed to load. Please hard-refresh.</div>`;
+          $('#game-container').innerHTML = '<div class="game-status warning">⚠️ ' + gameName + ' failed to load. Please hard-refresh.</div>';
         }
       };
-      script.onerror = () => {
-        $('#game-container').innerHTML = `<div class="game-status warning">⚠️ Could not fetch ${gameName} script. Please hard-refresh.</div>`;
+      script.onerror = function() {
+        $('#game-container').innerHTML = '<div class="game-status warning">⚠️ Could not fetch ' + gameName + ' script. Please hard-refresh.</div>';
       };
       document.head.appendChild(script);
     }
-  });
-
-  socket.on('game:state', (data) => {
-    const client = window.GameClients[state.currentGame];
-    if (client?.onState) client.onState(data, socket, state);
-    if (data.round && data.totalRounds) {
-      $('#game-round').textContent = `Round ${data.round}/${data.totalRounds}`;
-    }
-  });
-
-  socket.on('game:tick', (data) => {
-    const client = window.GameClients[state.currentGame];
-    if (client?.onTick) client.onTick(data, socket, state);
-  });
-
-  socket.on('game:progress', (data) => {
-    const client = window.GameClients[state.currentGame];
-    if (client?.onProgress) client.onProgress(data, socket, state);
   });
 
   socket.on('game:end', ({ scores }) => {

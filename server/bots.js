@@ -94,6 +94,9 @@ function scheduleBotActions(room, io) {
       case 'simon-says':    startSimonBot(room, io, botId, bot, sock); break;
       case 'color-clash':   startColorClashBot(room, io, botId, bot, sock); break;
       case 'type-racer':    startTypeRacerBot(room, io, botId, bot, sock); break;
+      default:
+        if (game.getBotMove) startGenericBot(room, io, botId, bot, sock);
+        break;
     }
   });
 }
@@ -467,6 +470,33 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
       addTimer(room, t);
     }
   }, 200);
+  addTimer(room, poll);
+}
+
+// ─── Generic Bot for getBotMove() pattern ───
+function startGenericBot(room, io, botId, bot, sock) {
+  const poll = setInterval(() => {
+    const gs = room.gameState;
+    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    
+    const game = room.currentGame;
+    if (!game || !game.getBotMove) return;
+    
+    const move = game.getBotMove(room, { ...bot, id: botId });
+    if (!move) return;
+    
+    if (move.delayMs) {
+      const t = setTimeout(() => {
+        // Double-check game state hasn't changed
+        const currentGs = room.gameState;
+        if (!currentGs || currentGs.phase === 'finished') return;
+        game.onEvent(room, sock, move.event, move.data, io);
+      }, move.delayMs);
+      addTimer(room, t);
+    } else {
+      game.onEvent(room, sock, move.event, move.data, io);
+    }
+  }, 2000);
   addTimer(room, poll);
 }
 

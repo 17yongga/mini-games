@@ -248,6 +248,33 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'solving') {
+      const problem = gs.problems[gs.round - 1];
+      const elapsed = Date.now() - gs.roundStart;
+      const remaining = Math.max(0, 15000 - elapsed);
+      return {
+        phase: 'solving',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        problem: problem?.problem,
+        timeLimit: remaining,
+        scores: Array.from(room.players.values()).map(p => ({ name: p.name, score: p.score }))
+      };
+    }
+    if (gs.phase === 'result') {
+      return {
+        phase: 'result',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        results: gs.results
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._mbTimers) {
       room._mbTimers.forEach(t => { clearTimeout(t); clearInterval(t); });

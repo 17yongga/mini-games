@@ -211,6 +211,7 @@ input[type="text"]::placeholder { color: var(--text-dim); }
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 /* RESULTS */
@@ -797,4 +798,271 @@ input[type="text"]::placeholder { color: var(--text-dim); }
   border-radius: var(--radius);
   font-size: 14px;
   color: var(--text);
+}
+
+/* ─── Hangman ─────────────────────────────────────────── */
+.hg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.hg-round { font-weight: 600; color: var(--primary); }
+.hg-timer { font-weight: 700; color: var(--yellow); }
+.hg-hint  { font-size: 12px; }
+
+.hg-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.hg-scaffold-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hg-svg {
+  width: 120px;
+  height: 102px;
+}
+
+.hg-wrong-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.hg-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hg-blanks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+}
+
+.hg-blank {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 26px;
+  height: 34px;
+  border-bottom: 2px solid var(--text-dim);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+.hg-blank.revealed {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
+
+.hg-wrong-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 20px;
+}
+.hg-wrong-badge {
+  display: inline-block;
+  background: #3b1212;
+  color: var(--red);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hg-keyboard { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.hg-kb-row { display: flex; gap: 4px; }
+.hg-key {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--surface2);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.hg-key:hover:not(:disabled) { background: var(--primary); color: white; }
+.hg-key.wrong  { background: #3b1212; color: var(--red);   opacity: 0.7; cursor: default; }
+.hg-key.right  { background: #0d2818; color: var(--green); opacity: 0.7; cursor: default; }
+
+.hg-word-guess {
+  display: flex;
+  gap: 6px;
+}
+.hg-word-guess input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.hg-word-guess input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.hg-feedback {
+  font-size: 13px;
+  min-height: 18px;
+  text-align: center;
+}
+.hg-feedback.success { color: var(--green); }
+.hg-feedback.danger  { color: var(--red); }
+.hg-feedback.warning { color: var(--yellow); }
+
+.hg-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 8px 0;
+}
+.hg-reveal-word {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+.hg-reveal-hint { color: var(--text-dim); font-size: 13px; }
+
+@media (max-width: 340px) {
+  .hg-key { width: 24px; height: 24px; font-size: 11px; }
+  .hg-svg { width: 100px; height: 85px; }
+}
+
+/* ── Number Guess ─────────────────────────────────────────────── */
+.ng-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.ng-round   { color: var(--text-dim); }
+.ng-range   { color: var(--text); }
+.ng-timer   { color: var(--primary); font-weight: 600; min-width: 32px; text-align: right; }
+
+.ng-timer-bar {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.ng-timer-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+
+.ng-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ng-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+.ng-input:focus  { outline: none; border-color: var(--primary); }
+.ng-input::-webkit-inner-spin-button,
+.ng-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.ng-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ng-submit { white-space: nowrap; padding: 10px 16px; font-size: 14px; }
+
+.ng-feedback {
+  min-height: 20px;
+  text-align: center;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.ng-feedback.success { color: var(--green); font-weight: 600; }
+.ng-feedback.warning { color: var(--yellow); }
+
+.ng-log {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--surface2);
+  padding-top: 8px;
+}
+.ng-log-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 8px 0; }
+
+.ng-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+}
+.ng-log-correct { border-left: 3px solid var(--green); }
+.ng-log-higher  { border-left: 3px solid var(--primary); }
+.ng-log-lower   { border-left: 3px solid var(--yellow); }
+
+.ng-log-player { font-weight: 600; color: var(--primary); }
+.ng-log-hint   { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.ng-log-points { color: var(--green); font-weight: 700; font-size: 12px; }
+
+/* Result screen */
+.ng-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.ng-result-number {
+  font-size: 64px;
+  font-weight: 900;
+  color: var(--primary);
+  line-height: 1;
+}
+.ng-result-label  { font-size: 14px; color: var(--text-dim); margin-top: -4px; }
+.ng-result-msg    { font-size: 15px; color: var(--text); }
+.ng-result-log    {
+  width: 100%;
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
 }

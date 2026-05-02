@@ -151,6 +151,34 @@ module.exports = {
     room.state = 'results';
   },
 
+  getReconnectState(room) {
+    const gs = room.gameState;
+    if (!gs) return null;
+    if (gs.phase === 'scrambled') {
+      const elapsed = Date.now() - gs.roundStart;
+      const remaining = Math.max(0, 25000 - elapsed);
+      return {
+        phase: 'scrambled',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        scrambledWord: gs.scrambledWords[gs.round - 1],
+        timeLimit: remaining,
+        solvers: gs.solvers
+      };
+    }
+    if (gs.phase === 'reveal') {
+      return {
+        phase: 'reveal',
+        round: gs.round,
+        totalRounds: gs.totalRounds,
+        originalWord: gs.words[gs.round - 1],
+        scrambledWord: gs.scrambledWords[gs.round - 1],
+        solvers: gs.solvers
+      };
+    }
+    return null;
+  },
+
   cleanup(room) {
     if (room._wsTimers) {
       room._wsTimers.forEach(t => clearTimeout(t));
