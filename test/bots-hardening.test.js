@@ -22,6 +22,7 @@ test('generic scheduler allows only one delayed action per bot and phase', async
     roomEpoch: 1,
     gameState: { phase: 'playing', round: 1 },
     _botTimers: [],
+    players: new Map([['bot-1', { difficulty: 'easy', isBot: true }]]),
   };
   bots._startGenericBot(room, {}, 'bot-1', { difficulty: 'easy' }, bots.fakeSocket('bot-1'));
   await new Promise(resolve => setTimeout(resolve, 4250));
@@ -43,6 +44,7 @@ test('generic delayed action cannot cross a round boundary', async () => {
     roomEpoch: 1,
     gameState: { phase: 'playing', round: 1 },
     _botTimers: [],
+    players: new Map([['bot-1', { difficulty: 'easy', isBot: true }]]),
   };
   bots._startGenericBot(room, {}, 'bot-1', { difficulty: 'easy' }, bots.fakeSocket('bot-1'));
   await new Promise(resolve => setTimeout(resolve, 2050));
