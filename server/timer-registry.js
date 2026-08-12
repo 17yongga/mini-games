@@ -1,8 +1,10 @@
 'use strict';
 
 class TimerRegistry {
-  constructor(isCurrent = () => true) {
+  constructor(isCurrent = () => true, onError = () => {}, context = {}) {
     this.isCurrent = isCurrent;
+    this.onError = onError;
+    this.context = context;
     this.handles = new Map();
   }
 
@@ -25,7 +27,16 @@ class TimerRegistry {
         if (kind === 'interval') this.cancel(handle);
         return;
       }
-      callback();
+      try {
+        callback();
+      } catch (error) {
+        if (kind === 'interval') this.cancel(handle);
+        try {
+          this.onError(error, { ...this.context, kind, group });
+        } catch {
+          // Error reporting must never turn a contained timer failure into a crash.
+        }
+      }
     };
     handle = kind === 'timeout'
       ? setTimeout(wrapped, delayMs)

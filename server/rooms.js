@@ -9,9 +9,16 @@ const GRACE_PERIOD = 30000;
 const INACTIVE_ROOM_TTL = 2 * 60 * 60 * 1000;
 const graceTimers = new Map();
 let lifecycleHooks = {};
+let maxRooms = parseMaxRooms(process.env.MAX_ROOMS);
+
+function parseMaxRooms(value) {
+  const parsed = Number.parseInt(value || '1000', 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1000;
+}
 
 function configure(hooks = {}) {
-  lifecycleHooks = { ...hooks };
+  lifecycleHooks = { ...lifecycleHooks, ...hooks };
+  if (Number.isSafeInteger(hooks.maxRooms) && hooks.maxRooms > 0) maxRooms = hooks.maxRooms;
 }
 
 function generateCode() {
@@ -68,6 +75,7 @@ function attachSocket(socket, room, playerKey) {
 
 function createRoom(hostSocket, hostName) {
   if (socketMembership.has(hostSocket.id)) return { error: 'Already in a room' };
+  if (roomStore.size >= maxRooms) return { error: 'Room capacity reached', code: 'ROOM_CAPACITY_REACHED' };
   const code = generateCode();
   const identity = makePlayer(hostName, true);
   const room = {
@@ -82,7 +90,11 @@ function createRoom(hostSocket, hostName) {
     roomEpoch: 1,
     gameInstanceId: null,
   };
-  room.timerRegistry = new TimerRegistry(() => roomStore.get(code) === room);
+  room.timerRegistry = new TimerRegistry(
+    () => roomStore.get(code) === room,
+    (error, context) => lifecycleHooks.timerError?.(error, { code, ...context }),
+    { code },
+  );
   roomStore.set(code, room);
   attachSocket(hostSocket, room, hostSocket.id);
   return { room, playerId: identity.player.playerId, reconnectToken: identity.reconnectToken };
@@ -104,7 +116,37 @@ function joinRoom(socket, code, name) {
   return { room, playerId: identity.player.playerId, reconnectToken: identity.reconnectToken };
 }
 
-function migrateIdentity(value, oldId, newId, seen = new WeakSet()) {
+function assertNoIdentityKeyCollision(value, oldId, newId, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return;
+  seen.add(value);
+  if (value instanceof Map) {
+    if (oldId !== newId && value.has(oldId) && value.has(newId)) throw new Error('Identity key migration collision');
+    for (const [key, item] of value) {
+      assertNoIdentityKeyCollision(key, oldId, newId, seen);
+      assertNoIdentityKeyCollision(item, oldId, newId, seen);
+    }
+    return;
+  }
+  if (value instanceof Set) {
+    for (const item of value) assertNoIdentityKeyCollision(item, oldId, newId, seen);
+    return;
+  }
+  if (Buffer.isBuffer(value) || value instanceof Date) return;
+  const proto = Object.getPrototypeOf(value);
+  if (Array.isArray(value)) {
+    for (const item of value) assertNoIdentityKeyCollision(item, oldId, newId, seen);
+    return;
+  }
+  if (proto !== Object.prototype && proto !== null) return;
+  if (oldId !== newId && Object.prototype.hasOwnProperty.call(value, oldId) &&
+      Object.prototype.hasOwnProperty.call(value, newId)) {
+    throw new Error('Identity key migration collision');
+  }
+  for (const key of Object.keys(value)) assertNoIdentityKeyCollision(value[key], oldId, newId, seen);
+}
+
+function migrateIdentity(value, oldId, newId, seen = new WeakSet(), preflighted = false) {
+  if (!preflighted) assertNoIdentityKeyCollision(value, oldId, newId);
   if (value === oldId) return newId;
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return value;
@@ -113,24 +155,37 @@ function migrateIdentity(value, oldId, newId, seen = new WeakSet()) {
   if (value instanceof Map) {
     const entries = [];
     for (const [key, item] of value) {
-      entries.push([migrateIdentity(key, oldId, newId, seen), migrateIdentity(item, oldId, newId, seen)]);
+      entries.push([migrateIdentity(key, oldId, newId, seen, true), migrateIdentity(item, oldId, newId, seen, true)]);
     }
     value.clear();
     for (const entry of entries) value.set(entry[0], entry[1]);
     return value;
   }
   if (value instanceof Set) {
-    const entries = [...value].map(item => migrateIdentity(item, oldId, newId, seen));
+    const entries = [...value].map(item => migrateIdentity(item, oldId, newId, seen, true));
     value.clear();
     for (const item of entries) value.add(item);
     return value;
   }
   if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) value[i] = migrateIdentity(value[i], oldId, newId, seen);
+    for (let i = 0; i < value.length; i++) value[i] = migrateIdentity(value[i], oldId, newId, seen, true);
     return value;
   }
   if (Buffer.isBuffer(value) || value instanceof Date) return value;
-  for (const key of Object.keys(value)) value[key] = migrateIdentity(value[key], oldId, newId, seen);
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  const migratesOwnKey = oldId !== newId && Object.prototype.hasOwnProperty.call(value, oldId);
+  if (migratesOwnKey && Object.prototype.hasOwnProperty.call(value, newId)) {
+    throw new Error('Identity key migration collision');
+  }
+  for (const key of Object.keys(value)) {
+    value[key] = migrateIdentity(value[key], oldId, newId, seen, true);
+  }
+  if (migratesOwnKey) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, oldId);
+    delete value[oldId];
+    Object.defineProperty(value, newId, descriptor);
+  }
   return value;
 }
 
@@ -261,7 +316,6 @@ function getRoomBySocket(socketId) {
 function serializePlayers(room) {
   return [...room.players].map(([id, player]) => ({
     id,
-    playerId: player.playerId || id,
     name: player.name,
     score: player.score,
     isHost: player.isHost,
@@ -289,18 +343,23 @@ function getMetrics() {
   return { rooms: roomStore.size, players, roomStates: states, timers, graceSessions: graceTimers.size };
 }
 
-const sweepTimer = setInterval(() => {
-  const cutoff = Date.now() - INACTIVE_ROOM_TTL;
+function sweepInactive(now = Date.now(), ttl = INACTIVE_ROOM_TTL) {
+  const cutoff = now - ttl;
   for (const room of roomStore.values()) {
     if (room.lastActivityAt < cutoff) destroyRoom(room, 'inactive');
   }
+}
+
+const sweepTimer = setInterval(() => {
+  sweepInactive();
 }, 60 * 1000);
 sweepTimer.unref?.();
 
 module.exports = {
   configure, createRoom, joinRoom, rejoinRoom, leaveRoom, disconnectPlayer, finalizeLeave,
   destroyRoom, getRoom, getRoomBySocket, serializePlayers, resetScores, migrateIdentity,
-  touch, getMetrics, _resetForTests() {
+  touch, getMetrics, _sweepInactive: sweepInactive, _resetForTests() {
     for (const room of [...roomStore.values()]) destroyRoom(room, 'test-reset');
+    maxRooms = parseMaxRooms(process.env.MAX_ROOMS);
   },
 };

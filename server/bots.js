@@ -11,6 +11,7 @@ const BOT_NAMES = [
 
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
 const DIFF_EMOJI = { easy: '🟢', medium: '🟡', hard: '🔴' };
+const { TimerRegistry } = require('./timer-registry');
 
 let botCounter = 0;
 
@@ -106,13 +107,50 @@ function addTimer(room, t) {
   room._botTimers.push(t);
 }
 
+function registryFor(room) {
+  if (room.timerRegistry) return room.timerRegistry;
+  room.timerRegistry = new TimerRegistry(
+    () => true,
+    (error, context) => room.onTimerError?.(error, context),
+    { code: room.code },
+  );
+  return room.timerRegistry;
+}
+
+function botTimeout(room, botId, callback, delay) {
+  const context = captureContext(room, botId);
+  const handle = registryFor(room).timeout(() => {
+    if (contextMatches(room, context, botId)) callback();
+  }, delay * (room._botDelayScale || 1), 'bots');
+  addTimer(room, handle);
+  return handle;
+}
+
+function botInterval(room, botId, callback, delay) {
+  const context = captureContext(room, botId, false);
+  const handle = registryFor(room).interval(() => {
+    if (contextMatches(room, context, botId, false)) callback();
+    else cancelTimer(room, handle);
+  }, delay * (room._botDelayScale || 1), 'bots');
+  addTimer(room, handle);
+  return handle;
+}
+
+function cancelTimer(room, handle) {
+  if (!handle) return false;
+  if (room.timerRegistry?.cancel(handle)) return true;
+  clearTimeout(handle);
+  clearInterval(handle);
+  return true;
+}
+
 // ─── Reaction Race Bot ───
 // Single persistent interval per bot that watches for 'go' phase each round
 function startReactionBot(room, io, botId, bot, sock) {
   let acted = false;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     // Reset flag on new round (phase === 'ready')
     if (gs.phase === 'ready') { acted = false; return; }
@@ -120,7 +158,7 @@ function startReactionBot(room, io, botId, bot, sock) {
     if (gs.phase === 'go' && !acted && !gs.tapped.has(botId)) {
       acted = true;
       const delay = diffRange(bot.difficulty, [400, 900], [220, 500], [130, 300]);
-      const t = setTimeout(() => {
+      const t = botTimeout(room, botId, () => {
         if (room.gameState?.phase === 'go' && !room.gameState.tapped.has(botId)) {
           room.currentGame.onEvent(room, sock, 'tap', {}, io);
         }
@@ -134,9 +172,9 @@ function startReactionBot(room, io, botId, bot, sock) {
 // ─── Trivia Bot ───
 function startTriviaBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'question' && gs.round !== lastRound && !gs.answers.has(botId)) {
       lastRound = gs.round;
@@ -145,7 +183,7 @@ function startTriviaBot(room, io, botId, bot, sock) {
       const choice = correct ? q.answer : randomWrong(q.answer, q.options.length);
       const delay = diffRange(bot.difficulty, [4000, 8000], [2000, 5000], [800, 2500]);
 
-      const t = setTimeout(() => {
+      const t = botTimeout(room, botId, () => {
         if (room.gameState?.phase === 'question' && !room.gameState.answers.has(botId)) {
           room.currentGame.onEvent(room, sock, 'answer', { choice }, io);
         }
@@ -168,11 +206,11 @@ function startTapBot(room, io, botId, bot, sock) {
   let tapLoop = null;
   let lastRound = 0;
 
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
     if (!gs || gs.phase === 'finished') {
-      if (tapLoop) clearInterval(tapLoop);
-      clearInterval(poll);
+      if (tapLoop) cancelTimer(room, tapLoop);
+      cancelTimer(room, poll);
       return;
     }
 
@@ -181,9 +219,9 @@ function startTapBot(room, io, botId, bot, sock) {
       // Start tapping
       const tps = diffRange(bot.difficulty, [3, 5], [6, 9], [10, 15]);
       const interval = Math.max(50, 1000 / tps);
-      tapLoop = setInterval(() => {
+      tapLoop = botInterval(room, botId, () => {
         if (room.gameState?.phase !== 'tapping') {
-          clearInterval(tapLoop);
+          cancelTimer(room, tapLoop);
           tapLoop = null;
           return;
         }
@@ -198,9 +236,9 @@ function startTapBot(room, io, botId, bot, sock) {
 // ─── Word Scramble Bot ───
 function startWordBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'scrambled' && gs.round !== lastRound) {
       lastRound = gs.round;
@@ -209,7 +247,7 @@ function startWordBot(room, io, botId, bot, sock) {
 
       if (willSolve) {
         const delay = diffRange(bot.difficulty, [7000, 13000], [3500, 7000], [1500, 4000]);
-        const t = setTimeout(() => {
+        const t = botTimeout(room, botId, () => {
           if (room.gameState?.phase === 'scrambled') {
             const already = room.gameState.solvers.find(s => s.id === botId);
             if (!already) {
@@ -231,9 +269,9 @@ function startEmojiBot(room, io, botId, bot, sock) {
   let actedThisTurn = false;
   let lastRound = 0;
 
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     // New round: reset memory and acted flag
     if (gs.round !== lastRound && (gs.phase === 'playing' || gs.phase === 'roundResult')) {
@@ -298,7 +336,7 @@ function startEmojiBot(room, io, botId, bot, sock) {
 
     // First flip after delay
     const delay1 = diffRange(bot.difficulty, [1200, 2000], [700, 1200], [400, 700]);
-    const t1 = setTimeout(() => {
+    const t1 = botTimeout(room, botId, () => {
       const gs2 = room.gameState;
       if (!gs2 || gs2.currentTurn !== botId || gs2.phase !== 'playing' || gs2.locked) return;
 
@@ -308,7 +346,7 @@ function startEmojiBot(room, io, botId, bot, sock) {
 
       // Second flip after delay
       const delay2 = diffRange(bot.difficulty, [800, 1500], [500, 900], [300, 600]);
-      const t2 = setTimeout(() => {
+      const t2 = botTimeout(room, botId, () => {
         const gs3 = room.gameState;
         if (!gs3 || gs3.currentTurn !== botId || gs3.phase !== 'playing') return;
         if (gs3.firstPick === null) return; // already resolved somehow
@@ -318,7 +356,7 @@ function startEmojiBot(room, io, botId, bot, sock) {
 
         // After the flip resolves (match or unflip), reset actedThisTurn
         // so the poll loop can fire again if we get another turn (match = same player)
-        setTimeout(() => { actedThisTurn = false; }, 1500);
+        botTimeout(room, botId, () => { actedThisTurn = false; }, 1500);
       }, delay2);
       addTimer(room, t2);
     }, delay1);
@@ -330,9 +368,9 @@ function startEmojiBot(room, io, botId, bot, sock) {
 // ─── Math Blitz Bot ───
 function startMathBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'solving' && gs.round !== lastRound && !gs.answers.has(botId)) {
       lastRound = gs.round;
@@ -341,7 +379,7 @@ function startMathBot(room, io, botId, bot, sock) {
 
       if (willSolve) {
         const delay = diffRange(bot.difficulty, [4000, 9000], [2000, 5000], [800, 2500]);
-        const t = setTimeout(() => {
+        const t = botTimeout(room, botId, () => {
           if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
             room.currentGame.onEvent(room, sock, 'answer', { answer: String(problem.answer) }, io);
           }
@@ -350,13 +388,13 @@ function startMathBot(room, io, botId, bot, sock) {
       } else {
         // Wrong answer attempt (then maybe give up)
         const delay = diffRange(bot.difficulty, [3000, 7000], [2000, 5000], [1500, 3000]);
-        const t = setTimeout(() => {
+        const t = botTimeout(room, botId, () => {
           if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
             const wrongAnswer = problem.answer + (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 10));
             room.currentGame.onEvent(room, sock, 'answer', { answer: String(wrongAnswer) }, io);
             // Try again with correct answer sometimes
             if (diffChance(bot.difficulty, 0.2, 0.4, 0.6)) {
-              const retry = setTimeout(() => {
+              const retry = botTimeout(room, botId, () => {
                 if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
                   room.currentGame.onEvent(room, sock, 'answer', { answer: String(problem.answer) }, io);
                 }
@@ -375,10 +413,10 @@ function startMathBot(room, io, botId, bot, sock) {
 // ─── Simon Says Bot ───
 function startSimonBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
-    if (gs.eliminated.has(botId)) { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
+    if (gs.eliminated.has(botId)) { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'input' && gs.round !== lastRound) {
       lastRound = gs.round;
@@ -395,7 +433,7 @@ function startSimonBot(room, io, botId, bot, sock) {
       // Enter sequence one color at a time
       sequence.forEach((color, i) => {
         const delay = speed * (i + 1) + Math.random() * 200;
-        const t = setTimeout(() => {
+        const t = botTimeout(room, botId, () => {
           if (gs.eliminated.has(botId) || gs.phase !== 'input') return;
 
           let inputColor = color;
@@ -418,9 +456,9 @@ function startSimonBot(room, io, botId, bot, sock) {
 // ─── Color Clash Bot ───
 function startColorClashBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'showing' && gs.round !== lastRound && !gs.answers.has(botId)) {
       lastRound = gs.round;
@@ -428,7 +466,7 @@ function startColorClashBot(room, io, botId, bot, sock) {
       const choice = correct ? gs.inkColor : gs.word; // wrong = picks the word (classic Stroop error)
       const delay = diffRange(bot.difficulty, [2000, 4000], [1000, 2500], [400, 1200]);
 
-      const t = setTimeout(() => {
+      const t = botTimeout(room, botId, () => {
         if (room.gameState?.phase === 'showing' && !room.gameState.answers.has(botId)) {
           room.currentGame.onEvent(room, sock, 'answer', { choice }, io);
         }
@@ -444,9 +482,9 @@ function startColorClashBot(room, io, botId, bot, sock) {
 // No need to fake keystroke-by-keystroke — just emit 'finish' at the right time.
 function startTypeRacerBot(room, io, botId, bot, sock) {
   let lastRound = 0;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
 
     if (gs.phase === 'typing' && gs.round !== lastRound) {
       lastRound = gs.round;
@@ -466,15 +504,15 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
           draft += char;
         }
       }
-      const context = captureContext(room);
-      const progressTimer = setTimeout(() => {
-        if (!contextMatches(room, context)) return;
+      const context = captureContext(room, botId);
+      const progressTimer = botTimeout(room, botId, () => {
+        if (!contextMatches(room, context, botId)) return;
         room.currentGame.onEvent(room, sock, 'progress', { typed: draft }, io);
       }, Math.max(250, delay * 0.75));
       addTimer(room, progressTimer);
 
-      const t = setTimeout(() => {
-        if (!contextMatches(room, context)) return;
+      const t = botTimeout(room, botId, () => {
+        if (!contextMatches(room, context, botId)) return;
         if (room.gameState?.phase !== 'typing' || room.gameState.round !== lastRound) return;
         if (gs.finishers && gs.finishers.some(f => f.id === botId)) return;
 
@@ -495,9 +533,9 @@ function startGenericBot(room, io, botId, bot, sock) {
   let pending = null;
   let pendingKey = null;
   let completedKey = null;
-  const poll = setInterval(() => {
+  const poll = botInterval(room, botId, () => {
     const gs = room.gameState;
-    if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
+    if (!gs || gs.phase === 'finished') { cancelTimer(room, poll); return; }
     
     const game = room.currentGame;
     if (!game || !game.getBotMove) return;
@@ -506,27 +544,27 @@ function startGenericBot(room, io, botId, bot, sock) {
     if (completedKey === actionKey) return;
     if (pending && pendingKey === actionKey) return;
     if (pending && pendingKey !== actionKey) {
-      clearTimeout(pending);
+      cancelTimer(room, pending);
       pending = null;
       pendingKey = null;
     }
 
     const move = game.getBotMove(room, { ...bot, id: botId });
     if (!move) return;
-    const context = captureContext(room);
+    const context = captureContext(room, botId);
 
     if (move.delayMs > 0) {
       pendingKey = actionKey;
-      pending = setTimeout(() => {
+      pending = botTimeout(room, botId, () => {
         pending = null;
         pendingKey = null;
-        if (!contextMatches(room, context)) return;
+        if (!contextMatches(room, context, botId)) return;
         completedKey = actionKey;
         game.onEvent(room, sock, move.event, move.data, io);
       }, move.delayMs);
       addTimer(room, pending);
     } else {
-      if (contextMatches(room, context)) {
+      if (contextMatches(room, context, botId)) {
         completedKey = actionKey;
         game.onEvent(room, sock, move.event, move.data, io);
       }
@@ -535,7 +573,7 @@ function startGenericBot(room, io, botId, bot, sock) {
   addTimer(room, poll);
 }
 
-function captureContext(room) {
+function captureContext(room, botId, includeAction = true) {
   return {
     game: room.currentGame,
     gameInstanceId: room.gameInstanceId,
@@ -543,32 +581,56 @@ function captureContext(room) {
     gameState: room.gameState,
     round: room.gameState?.round,
     phase: room.gameState?.phase,
+    includeAction,
+    bot: botId === undefined ? undefined : room.players?.get(botId),
+    actionStatus: includeAction ? captureActionStatus(room.gameState, botId) : null,
   };
 }
 
-function contextMatches(room, context) {
-  return room.currentGame === context.game &&
+function captureActionStatus(gs, botId) {
+  if (!gs || botId === undefined) return null;
+  return {
+    answered: !!gs.answers?.has?.(botId),
+    tapped: !!gs.tapped?.has?.(botId),
+    solved: !!gs.solvers?.some?.(entry => entry.id === botId),
+    finished: !!gs.finishers?.some?.(entry => entry.id === botId),
+    eliminated: !!gs.eliminated?.has?.(botId),
+    currentTurn: gs.currentTurn,
+    locked: gs.locked,
+    firstPick: gs.firstPick,
+  };
+}
+
+function contextMatches(room, context, botId, includeAction = context.includeAction !== false) {
+  const baseMatches = room.currentGame === context.game &&
     room.gameInstanceId === context.gameInstanceId &&
     room.roomEpoch === context.roomEpoch &&
     room.gameState === context.gameState &&
+    (botId === undefined || (room.players?.get(botId) === context.bot && context.bot?.isBot));
+  return baseMatches && (!includeAction || (
     room.gameState?.round === context.round &&
-    room.gameState?.phase === context.phase;
+    room.gameState?.phase === context.phase &&
+    JSON.stringify(captureActionStatus(room.gameState, botId)) === JSON.stringify(context.actionStatus)
+  ));
 }
 
 function clearBotTimers(room) {
   if (room._botTimers) {
-    room._botTimers.forEach(t => {
-      clearTimeout(t);
-      clearInterval(t);
-    });
+    room._botTimers.forEach(t => cancelTimer(room, t));
     room._botTimers = [];
   }
+  room.timerRegistry?.cancelGroup('bots');
 }
 
 module.exports = {
   createBot, removeBot, removeBots, getBotIds, scheduleBotActions, clearBotTimers,
   fakeSocket, DIFF_EMOJI,
   _startGenericBot: startGenericBot,
+  _startTriviaBot: startTriviaBot,
+  _startWordBot: startWordBot,
+  _startMathBot: startMathBot,
+  _startColorClashBot: startColorClashBot,
+  _startTypeRacerBot: startTypeRacerBot,
   _captureContext: captureContext,
   _contextMatches: contextMatches,
 };

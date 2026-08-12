@@ -25,6 +25,8 @@ const io = new Server(server, {
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 const counters = { accepted: 0, rejected: 0, internalErrors: 0, reconnectSuccess: 0, reconnectFailure: 0 };
+const EVENT_WINDOW_MS = 10_000;
+const MAX_EVENTS_PER_WINDOW = 120;
 
 const htmlNoCache = (res, filePath) => {
   if (filePath.endsWith('.html')) {
@@ -40,16 +42,14 @@ app.get('/play', (req, res) => {
 });
 app.get('/play/health', (req, res) => {
   const roomMetrics = rooms.getMetrics();
+  const eventLoop = sampleEventLoopDelay();
   res.json({
     status: 'ok',
     games: games.list().length,
     sockets: io.engine.clientsCount,
     ...roomMetrics,
     events: { ...counters },
-    eventLoop: {
-      delayMeanMs: Number((eventLoopDelay.mean / 1e6).toFixed(2)) || 0,
-      delayMaxMs: Number((eventLoopDelay.max / 1e6).toFixed(2)) || 0,
-    },
+    eventLoop,
   });
 });
 
@@ -71,11 +71,34 @@ function safeCallback(cb, payload) {
   }
 }
 
+function sampleEventLoopDelay(histogram = eventLoopDelay) {
+  const sample = {
+    delayMeanMs: Number((histogram.mean / 1e6).toFixed(2)) || 0,
+    delayMaxMs: Number((histogram.max / 1e6).toFixed(2)) || 0,
+  };
+  histogram.reset();
+  return sample;
+}
+
+function consumeEventBudget(socket, now = Date.now()) {
+  const budget = socket.data.eventBudget || (socket.data.eventBudget = { startedAt: now, count: 0 });
+  if (now - budget.startedAt >= EVENT_WINDOW_MS) {
+    budget.startedAt = now;
+    budget.count = 0;
+  }
+  budget.count++;
+  return budget.count <= MAX_EVENTS_PER_WINDOW;
+}
+
 function register(socket, event, handler, { acknowledge = true } = {}) {
   socket.on(event, (payload, cb) => {
     if (typeof payload === 'function' && cb === undefined) {
       cb = payload;
       payload = undefined;
+    }
+    if (!consumeEventBudget(socket)) {
+      counters.rejected++;
+      return safeCallback(cb, responseError('RATE_LIMITED', 'Too many events; retry shortly'));
     }
     if (!contracts.validate(event, payload)) {
       counters.rejected++;
@@ -108,7 +131,7 @@ io.on('connection', (socket) => {
 
   register(socket, 'room:create', ({ name }) => {
     const result = rooms.createRoom(socket, name.trim());
-    if (result.error) return responseError('ALREADY_IN_ROOM', result.error);
+    if (result.error) return responseError(result.code || 'ALREADY_IN_ROOM', result.error);
     return identityResponse(result);
   });
 
@@ -264,10 +287,19 @@ function disposeGame(room) {
   bots.clearBotTimers(room);
   room.currentGame?.cleanup?.(room);
 }
-rooms.configure({ disposeRoom: room => disposeGame(room) });
+rooms.configure({
+  disposeRoom: room => disposeGame(room),
+  timerError(error, context) {
+    counters.internalErrors++;
+    console.error(JSON.stringify({ level: 'error', event: 'timer.callback', ...context, error: error.message }));
+  },
+});
 
 if (require.main === module) {
   server.listen(PORT, () => console.log(`Mini Games Platform running on port ${PORT}`));
 }
 
-module.exports = { app, server, io, counters, responseError, responseOk };
+module.exports = {
+  app, server, io, counters, responseError, responseOk,
+  sampleEventLoopDelay, consumeEventBudget, EVENT_WINDOW_MS, MAX_EVENTS_PER_WINDOW,
+};
