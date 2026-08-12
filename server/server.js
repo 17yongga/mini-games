@@ -1,11 +1,15 @@
-// Mini Games Platform — main server
+'use strict';
+
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
 const path = require('path');
+const crypto = require('crypto');
+const { monitorEventLoopDelay } = require('perf_hooks');
+const { Server } = require('socket.io');
 const rooms = require('./rooms');
 const games = require('./games');
 const bots = require('./bots');
+const contracts = require('./contracts');
 
 const PORT = process.env.PORT || 3004;
 const app = express();
@@ -13,13 +17,15 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
   path: '/minigames-ws/',
-  // Mobile-friendly: longer timeouts to survive app-switching
-  pingInterval: 10000,   // ping every 10s
-  pingTimeout: 30000,    // wait 30s before considering disconnected
-  connectTimeout: 20000
+  pingInterval: 10000,
+  pingTimeout: 30000,
+  connectTimeout: 20000,
+  maxHttpBufferSize: 16 * 1024,
 });
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+eventLoopDelay.enable();
+const counters = { accepted: 0, rejected: 0, internalErrors: 0, reconnectSuccess: 0, reconnectFailure: 0 };
 
-// Serve static files — HTML files get no-cache to prevent iOS Safari serving stale builds
 const htmlNoCache = (res, filePath) => {
   if (filePath.endsWith('.html')) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -32,217 +38,236 @@ app.get('/play', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
-app.get('/play/health', (req, res) => res.json({ status: 'ok', games: games.list().length }));
+app.get('/play/health', (req, res) => {
+  const roomMetrics = rooms.getMetrics();
+  res.json({
+    status: 'ok',
+    games: games.list().length,
+    sockets: io.engine.clientsCount,
+    ...roomMetrics,
+    events: { ...counters },
+    eventLoop: {
+      delayMeanMs: Number((eventLoopDelay.mean / 1e6).toFixed(2)) || 0,
+      delayMaxMs: Number((eventLoopDelay.max / 1e6).toFixed(2)) || 0,
+    },
+  });
+});
+
+function responseError(code, message) {
+  return { ok: false, code, error: message, message };
+}
+
+function responseOk(data = {}) {
+  return { ok: true, ...data };
+}
+
+function safeCallback(cb, payload) {
+  if (typeof cb !== 'function') return;
+  try {
+    cb(payload);
+  } catch (error) {
+    counters.internalErrors++;
+    console.error(JSON.stringify({ level: 'error', event: 'socket.callback', error: error.message }));
+  }
+}
+
+function register(socket, event, handler, { acknowledge = true } = {}) {
+  socket.on(event, (payload, cb) => {
+    if (typeof payload === 'function' && cb === undefined) {
+      cb = payload;
+      payload = undefined;
+    }
+    if (!contracts.validate(event, payload)) {
+      counters.rejected++;
+      return safeCallback(cb, responseError('INVALID_PAYLOAD', `Invalid ${event} payload`));
+    }
+    try {
+      const result = handler(payload, cb);
+      counters.accepted++;
+      if (acknowledge && result !== undefined) safeCallback(cb, result);
+    } catch (error) {
+      counters.internalErrors++;
+      const correlationId = crypto.randomBytes(6).toString('hex');
+      console.error(JSON.stringify({ level: 'error', event, correlationId, error: error.message }));
+      safeCallback(cb, responseError('INTERNAL_ERROR', `Request failed (${correlationId})`));
+    }
+  });
+}
+
+function identityResponse(result) {
+  return responseOk({
+    code: result.room.code,
+    players: rooms.serializePlayers(result.room),
+    playerId: result.playerId,
+    reconnectToken: result.reconnectToken,
+  });
+}
 
 io.on('connection', (socket) => {
-  console.log(`Connected: ${socket.id}`);
   socket.emit('games:list', games.list());
 
-  // ─── Create Room ───
-  socket.on('room:create', ({ name }, cb) => {
-    if (!name || name.length > 20) return cb?.({ error: 'Invalid name' });
-    const room = rooms.createRoom(socket, name.trim());
-    console.log(`Room ${room.code} created by ${name}`);
-    cb?.({ code: room.code, players: rooms.serializePlayers(room) });
+  register(socket, 'room:create', ({ name }) => {
+    const result = rooms.createRoom(socket, name.trim());
+    if (result.error) return responseError('ALREADY_IN_ROOM', result.error);
+    return identityResponse(result);
   });
 
-  // ─── Join Room ───
-  socket.on('room:join', ({ code, name }, cb) => {
-    if (!name || name.length > 20) return cb?.({ error: 'Invalid name' });
-    if (!code) return cb?.({ error: 'Invalid code' });
-    code = code.toUpperCase().trim();
-
-    const result = rooms.joinRoom(socket, code, name.trim());
-    if (result.error) return cb?.({ error: result.error });
-
-    const room = result.room;
-    console.log(`${name} joined room ${code}`);
-    cb?.({ code: room.code, players: rooms.serializePlayers(room) });
-    socket.to(code).emit('room:playerJoined', {
-      players: rooms.serializePlayers(room),
-      newPlayer: name.trim()
+  register(socket, 'room:join', ({ code, name }) => {
+    const normalizedCode = code.toUpperCase().trim();
+    const result = rooms.joinRoom(socket, normalizedCode, name.trim());
+    if (result.error) return responseError('JOIN_REJECTED', result.error);
+    socket.to(normalizedCode).emit('room:playerJoined', {
+      players: rooms.serializePlayers(result.room), newPlayer: name.trim(),
     });
+    return identityResponse(result);
   });
 
-  // ─── Rejoin Room (auto-reconnect after disconnect) ───
-  socket.on('room:rejoin', ({ code, name }, cb) => {
-    if (!name || !code) return cb?.({ error: 'Invalid rejoin data' });
-    code = code.toUpperCase().trim();
-
-    const result = rooms.rejoinRoom(socket, code, name.trim());
-    if (result.error) return cb?.({ error: result.error });
-
-    const room = result.room;
-    const isHost = room.host === socket.id;
-
-    if (result.rejoined) {
-      console.log(`${name} rejoined room ${code}`);
-    } else {
-      console.log(`${name} joined room ${code} (fresh)`);
+  register(socket, 'room:rejoin', ({ code, playerId, reconnectToken }) => {
+    const normalizedCode = code.toUpperCase().trim();
+    const result = rooms.rejoinRoom(socket, normalizedCode, playerId, reconnectToken);
+    if (result.error) {
+      counters.reconnectFailure++;
+      return responseError(result.code || 'REJOIN_REJECTED', result.error);
     }
-
-    // Send full room state back to the reconnected player
-    const response = {
+    counters.reconnectSuccess++;
+    const room = result.room;
+    const response = responseOk({
       code: room.code,
       players: rooms.serializePlayers(room),
-      rejoined: !!result.rejoined,
-      isHost,
-      roomState: room.state // lobby | playing | results
-    };
-
-    // If game is in progress, send current game info
+      playerId: result.playerId,
+      reconnectToken: result.reconnectToken,
+      rejoined: true,
+      isHost: room.host === socket.id,
+      roomState: room.state,
+      roomEpoch: room.roomEpoch,
+      gameInstanceId: room.gameInstanceId,
+    });
     if (room.state === 'playing' && room.currentGame) {
       response.gameId = room.currentGame.id;
       response.gameName = room.currentGame.name;
-    }
-
-    cb?.(response);
-
-    // Re-emit current game state to the rejoining player so they're not stuck on a blank screen
-    if (room.state === 'playing' && room.currentGame?.getReconnectState) {
-      const reconnectState = room.currentGame.getReconnectState(room);
-      if (reconnectState) {
-        setTimeout(() => socket.emit('game:state', reconnectState), 700);
+      if (room.currentGame.getReconnectState) {
+        response.gameState = room.currentGame.getReconnectState(room);
       }
     }
-
-    // Notify others
-    socket.to(code).emit('room:playerRejoined', {
-      players: rooms.serializePlayers(room),
-      playerName: name.trim()
+    socket.to(normalizedCode).emit('room:playerRejoined', {
+      players: rooms.serializePlayers(room), playerName: room.players.get(socket.id)?.name,
     });
+    return response;
   });
 
-  // ─── Add Bot ───
-  socket.on('room:addBot', (_, cb) => {
+  register(socket, 'room:addBot', () => {
     const room = rooms.getRoomBySocket(socket.id);
-    if (!room) return cb?.({ error: 'Not in a room' });
-    if (room.host !== socket.id) return cb?.({ error: 'Only host can add bots' });
-    if (room.players.size >= 20) return cb?.({ error: 'Room is full' });
-    if (room.state !== 'lobby') return cb?.({ error: 'Can only add bots in lobby' });
-
-    const { id, bot } = bots.createBot(room);
-    console.log(`Bot ${bot.name} (${bot.difficulty}) added to room ${room.code}`);
+    if (!room) return responseError('NOT_IN_ROOM', 'Not in a room');
+    if (room.host !== socket.id) return responseError('FORBIDDEN', 'Only host can add bots');
+    if (room.players.size >= 20) return responseError('ROOM_FULL', 'Room is full');
+    if (room.state !== 'lobby') return responseError('INVALID_STATE', 'Can only add bots in lobby');
+    const { bot } = bots.createBot(room);
+    rooms.touch(room);
     io.to(room.code).emit('room:playerJoined', {
-      players: rooms.serializePlayers(room),
-      newPlayer: `${bot.diffEmoji} ${bot.name}`
+      players: rooms.serializePlayers(room), newPlayer: `${bot.diffEmoji} ${bot.name}`,
     });
-    cb?.({ ok: true });
+    return responseOk();
   });
 
-  // ─── Remove Bot ───
-  socket.on('room:removeBot', ({ botId }, cb) => {
+  register(socket, 'room:removeBot', ({ botId }) => {
     const room = rooms.getRoomBySocket(socket.id);
-    if (!room) return cb?.({ error: 'Not in a room' });
-    if (room.host !== socket.id) return cb?.({ error: 'Only host can remove bots' });
-
-    if (bots.removeBot(room, botId)) {
-      io.to(room.code).emit('room:playerLeft', { players: rooms.serializePlayers(room) });
-      cb?.({ ok: true });
-    } else {
-      cb?.({ error: 'Bot not found' });
-    }
+    if (!room) return responseError('NOT_IN_ROOM', 'Not in a room');
+    if (room.host !== socket.id) return responseError('FORBIDDEN', 'Only host can remove bots');
+    if (!bots.removeBot(room, botId)) return responseError('BOT_NOT_FOUND', 'Bot not found');
+    rooms.touch(room);
+    io.to(room.code).emit('room:playerLeft', { players: rooms.serializePlayers(room) });
+    return responseOk();
   });
 
-  // ─── Start Game ───
-  socket.on('room:startGame', ({ gameId }, cb) => {
+  register(socket, 'room:startGame', ({ gameId }) => {
     const room = rooms.getRoomBySocket(socket.id);
-    if (!room) return cb?.({ error: 'Not in a room' });
-    if (room.host !== socket.id) return cb?.({ error: 'Only host can start' });
-    if (room.players.size < 2) return cb?.({ error: 'Need at least 2 players' });
-
+    if (!room) return responseError('NOT_IN_ROOM', 'Not in a room');
+    if (room.host !== socket.id) return responseError('FORBIDDEN', 'Only host can start');
+    if (room.state !== 'lobby') return responseError('INVALID_STATE', 'Game already started');
     const game = games.get(gameId);
-    if (!game) return cb?.({ error: 'Unknown game' });
+    if (!game) return responseError('UNKNOWN_GAME', 'Unknown game');
+    if (room.players.size < game.minPlayers) return responseError('TOO_FEW_PLAYERS', `Need at least ${game.minPlayers} players`);
+    if (room.players.size > game.maxPlayers) return responseError('TOO_MANY_PLAYERS', `Maximum ${game.maxPlayers} players`);
 
     rooms.resetScores(room);
+    room.roomEpoch++;
+    room.gameInstanceId = crypto.randomUUID();
     room.state = 'playing';
     room.currentGame = game;
-
-    console.log(`Room ${room.code}: starting ${game.name}`);
+    const epoch = room.roomEpoch;
+    const instanceId = room.gameInstanceId;
     io.to(room.code).emit('game:start', {
-      gameId: game.id,
-      gameName: game.name,
-      players: rooms.serializePlayers(room)
+      gameId: game.id, gameName: game.name, players: rooms.serializePlayers(room),
+      roomEpoch: epoch, gameInstanceId: instanceId,
     });
-
-    setTimeout(() => {
+    room.timerRegistry.timeout(() => {
+      if (room.roomEpoch !== epoch || room.gameInstanceId !== instanceId || room.state !== 'playing') return;
       game.init(room, io);
       bots.scheduleBotActions(room, io);
-    }, 500);
-    cb?.({ ok: true });
+    }, 500, 'game-start');
+    return responseOk({ roomEpoch: epoch, gameInstanceId: instanceId });
   });
 
-  // ─── Game Events ───
-  socket.on('game:event', ({ event, data }) => {
+  register(socket, 'game:event', ({ event, data }) => {
     const room = rooms.getRoomBySocket(socket.id);
-    if (!room || room.state !== 'playing' || !room.currentGame) return;
-    room.currentGame.onEvent(room, socket, event, data, io);
+    if (!room || room.state !== 'playing' || !room.currentGame) return responseError('INVALID_STATE', 'No active game');
+    rooms.touch(room);
+    const authoritativeData = room.currentGame.id === 'type-racer' && event === 'finish'
+      ? { ...data, elapsed: undefined }
+      : data;
+    room.currentGame.onEvent(room, socket, event, authoritativeData, io);
+    return responseOk({ roomEpoch: room.roomEpoch, gameInstanceId: room.gameInstanceId });
   });
 
-  // ─── Back to Lobby ───
-  socket.on('room:backToLobby', () => {
+  register(socket, 'room:backToLobby', () => {
     const room = rooms.getRoomBySocket(socket.id);
-    if (!room) return;
-    if (room.host !== socket.id) return;
-
-    bots.clearBotTimers(room);
-    if (room.currentGame?.cleanup) room.currentGame.cleanup(room);
+    if (!room) return responseError('NOT_IN_ROOM', 'Not in a room');
+    if (room.host !== socket.id) return responseError('FORBIDDEN', 'Only host can return to lobby');
+    disposeGame(room);
+    room.roomEpoch++;
     room.state = 'lobby';
     room.currentGame = null;
     room.gameState = null;
+    room.gameInstanceId = null;
     rooms.resetScores(room);
-
-    io.to(room.code).emit('room:lobby', { players: rooms.serializePlayers(room) });
+    io.to(room.code).emit('room:lobby', { players: rooms.serializePlayers(room), roomEpoch: room.roomEpoch });
+    return responseOk({ roomEpoch: room.roomEpoch });
   });
 
-  // ─── Disconnect (with grace period) ───
   socket.on('disconnect', () => {
-    console.log(`Disconnected: ${socket.id}`);
-    const result = rooms.disconnectPlayer(socket.id);
-
-    if (result && result.gracePeriod) {
-      // Player is in grace period — notify others they're "away"
+    const result = rooms.disconnectPlayer(socket.id, finalized => {
+      if (!finalized.room) return;
+      io.to(finalized.code).emit('room:playerLeft', { players: rooms.serializePlayers(finalized.room) });
+      const humans = [...finalized.room.players.values()].filter(p => !p.isBot && !p.disconnected);
+      if (finalized.room.state === 'playing' && humans.length < 1) {
+        disposeGame(finalized.room);
+        finalized.room.roomEpoch++;
+        finalized.room.state = 'lobby';
+        finalized.room.currentGame = null;
+        finalized.room.gameState = null;
+        finalized.room.gameInstanceId = null;
+        io.to(finalized.code).emit('room:lobby', {
+          players: rooms.serializePlayers(finalized.room), message: 'Game ended — not enough players',
+        });
+      }
+    });
+    if (result?.gracePeriod) {
       io.to(result.code).emit('room:playerAway', {
-        players: rooms.serializePlayers(result.room),
-        playerName: result.room.players.get(socket.id)?.name
+        players: rooms.serializePlayers(result.room), playerName: result.playerName,
       });
-
-      // Set up the finalize callback after grace period
-      // (rooms.js handles the timer, but we need to emit events when it fires)
-      const checkFinalize = setInterval(() => {
-        const room = rooms.getRoom(result.code);
-        // If player was removed (grace expired) or rejoined, stop checking
-        if (!room || !room.players.has(socket.id)) {
-          clearInterval(checkFinalize);
-          if (room) {
-            io.to(result.code).emit('room:playerLeft', {
-              players: rooms.serializePlayers(room)
-            });
-            // Check if game should end
-            const humanCount = Array.from(room.players.values()).filter(p => !p.isBot && !p.disconnected).length;
-            if (room.state === 'playing' && humanCount < 1) {
-              bots.clearBotTimers(room);
-              if (room.currentGame?.cleanup) room.currentGame.cleanup(room);
-              room.state = 'lobby';
-              room.currentGame = null;
-              io.to(result.code).emit('room:lobby', {
-                players: rooms.serializePlayers(room),
-                message: 'Game ended — not enough players'
-              });
-            }
-          }
-          return;
-        }
-        // If player reconnected (no longer disconnected), stop
-        if (!room.players.get(socket.id)?.disconnected) {
-          clearInterval(checkFinalize);
-        }
-      }, 5000);
     }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`\n🎮 Mini Games Platform running on port ${PORT}`);
-  console.log(`  Games loaded: ${games.list().map(g => g.name).join(', ')}\n`);
-});
+function disposeGame(room) {
+  room.timerRegistry?.cancelGroup('game-start');
+  bots.clearBotTimers(room);
+  room.currentGame?.cleanup?.(room);
+}
+rooms.configure({ disposeRoom: room => disposeGame(room) });
+
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`Mini Games Platform running on port ${PORT}`));
+}
+
+module.exports = { app, server, io, counters, responseError, responseOk };

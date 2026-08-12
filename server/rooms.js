@@ -1,265 +1,306 @@
-// Room management — create, join, leave, query
-// Supports disconnect grace periods for mobile reconnection
+'use strict';
 
-const rooms = new Map();
-const GRACE_PERIOD = 30000; // 30s to reconnect before removal
-const graceTimers = new Map(); // socketId -> { timer, code, playerData }
+const crypto = require('crypto');
+const { TimerRegistry } = require('./timer-registry');
+
+const roomStore = new Map();
+const socketMembership = new Map();
+const GRACE_PERIOD = 30000;
+const INACTIVE_ROOM_TTL = 2 * 60 * 60 * 1000;
+const graceTimers = new Map();
+let lifecycleHooks = {};
+
+function configure(hooks = {}) {
+  lifecycleHooks = { ...hooks };
+}
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return rooms.has(code) ? generateCode() : code;
+  do {
+    code = '';
+    for (let i = 0; i < 4; i++) code += chars[crypto.randomInt(chars.length)];
+  } while (roomStore.has(code));
+  return code;
+}
+
+function issueIdentity() {
+  const playerId = crypto.randomBytes(16).toString('hex');
+  const reconnectToken = crypto.randomBytes(32).toString('base64url');
+  return { playerId, reconnectToken, reconnectTokenHash: hashToken(reconnectToken) };
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token, 'utf8').digest();
+}
+
+function tokenMatches(token, hash) {
+  if (typeof token !== 'string' || !Buffer.isBuffer(hash)) return false;
+  const candidate = hashToken(token);
+  return candidate.length === hash.length && crypto.timingSafeEqual(candidate, hash);
+}
+
+function makePlayer(name, isHost) {
+  const identity = issueIdentity();
+  return {
+    player: {
+      name,
+      score: 0,
+      isHost,
+      playerId: identity.playerId,
+      reconnectTokenHash: identity.reconnectTokenHash,
+    },
+    reconnectToken: identity.reconnectToken,
+  };
+}
+
+function touch(room) {
+  room.lastActivityAt = Date.now();
+}
+
+function attachSocket(socket, room, playerKey) {
+  if (socketMembership.has(socket.id)) return false;
+  socketMembership.set(socket.id, { code: room.code, playerKey });
+  socket.join(room.code);
+  touch(room);
+  return true;
 }
 
 function createRoom(hostSocket, hostName) {
+  if (socketMembership.has(hostSocket.id)) return { error: 'Already in a room' };
   const code = generateCode();
+  const identity = makePlayer(hostName, true);
   const room = {
     code,
     host: hostSocket.id,
-    players: new Map(),
+    players: new Map([[hostSocket.id, identity.player]]),
     state: 'lobby',
     currentGame: null,
     gameState: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    lastActivityAt: Date.now(),
+    roomEpoch: 1,
+    gameInstanceId: null,
   };
-  room.players.set(hostSocket.id, { name: hostName, score: 0, isHost: true });
-  rooms.set(code, room);
-  hostSocket.join(code);
-  return room;
+  room.timerRegistry = new TimerRegistry(() => roomStore.get(code) === room);
+  roomStore.set(code, room);
+  attachSocket(hostSocket, room, hostSocket.id);
+  return { room, playerId: identity.player.playerId, reconnectToken: identity.reconnectToken };
 }
 
 function joinRoom(socket, code, name) {
-  const room = rooms.get(code);
+  if (socketMembership.has(socket.id)) return { error: 'Already in a room' };
+  const room = roomStore.get(code);
   if (!room) return { error: 'Room not found' };
+  if (room.state !== 'lobby') return { error: 'Game in progress' };
   if (room.players.size >= 20) return { error: 'Room is full' };
-
-  // Check for duplicate names (skip if it's the same person reconnecting)
-  for (const [id, p] of room.players) {
-    if (p.name.toLowerCase() === name.toLowerCase() && !p.disconnected) {
-      return { error: 'Name already taken' };
-    }
+  for (const p of room.players.values()) {
+    if (p.name.toLowerCase() === name.toLowerCase()) return { error: 'Name already taken' };
   }
 
-  room.players.set(socket.id, { name, score: 0, isHost: false });
-  socket.join(code);
-  return { room };
+  const identity = makePlayer(name, false);
+  room.players.set(socket.id, identity.player);
+  attachSocket(socket, room, socket.id);
+  return { room, playerId: identity.player.playerId, reconnectToken: identity.reconnectToken };
 }
 
-// Rejoin: player reconnects with same name to same room
-function rejoinRoom(socket, code, name) {
-  const room = rooms.get(code);
-  if (!room) return { error: 'Room not found' };
+function migrateIdentity(value, oldId, newId, seen = new WeakSet()) {
+  if (value === oldId) return newId;
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
 
-  // Find disconnected player with same name
-  let oldId = null;
-  let oldPlayer = null;
-  for (const [id, p] of room.players) {
-    if (p.name.toLowerCase() === name.toLowerCase() && p.disconnected) {
+  if (value instanceof Map) {
+    const entries = [];
+    for (const [key, item] of value) {
+      entries.push([migrateIdentity(key, oldId, newId, seen), migrateIdentity(item, oldId, newId, seen)]);
+    }
+    value.clear();
+    for (const entry of entries) value.set(entry[0], entry[1]);
+    return value;
+  }
+  if (value instanceof Set) {
+    const entries = [...value].map(item => migrateIdentity(item, oldId, newId, seen));
+    value.clear();
+    for (const item of entries) value.add(item);
+    return value;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) value[i] = migrateIdentity(value[i], oldId, newId, seen);
+    return value;
+  }
+  if (Buffer.isBuffer(value) || value instanceof Date) return value;
+  for (const key of Object.keys(value)) value[key] = migrateIdentity(value[key], oldId, newId, seen);
+  return value;
+}
+
+function rejoinRoom(socket, code, playerId, reconnectToken) {
+  if (socketMembership.has(socket.id)) return { error: 'Already in a room', code: 'ALREADY_IN_ROOM' };
+  const room = roomStore.get(code);
+  if (!room) return { error: 'Room not found', code: 'ROOM_NOT_FOUND' };
+
+  let oldId;
+  let player;
+  for (const [id, candidate] of room.players) {
+    if (candidate.playerId === playerId) {
       oldId = id;
-      oldPlayer = p;
+      player = candidate;
       break;
     }
   }
-
-  if (oldPlayer) {
-    // Cancel the grace timer
-    const grace = graceTimers.get(oldId);
-    if (grace) {
-      clearTimeout(grace.timer);
-      graceTimers.delete(oldId);
-    }
-
-    // Transfer player data to new socket id
-    room.players.delete(oldId);
-    oldPlayer.disconnected = false;
-    room.players.set(socket.id, oldPlayer);
-
-    // If they were host, update host reference
-    if (room.host === oldId) {
-      room.host = socket.id;
-    }
-
-    // Update turn references in game state if mid-game
-    if (room.gameState) {
-      const gs = room.gameState;
-      if (gs.currentTurn === oldId) gs.currentTurn = socket.id;
-      if (gs.turnOrder) {
-        const idx = gs.turnOrder.indexOf(oldId);
-        if (idx !== -1) gs.turnOrder[idx] = socket.id;
-      }
-      // Fix tapped/answers sets/maps that reference old id
-      if (gs.tapped instanceof Set && gs.tapped.has(oldId)) {
-        gs.tapped.delete(oldId);
-        gs.tapped.add(socket.id);
-      }
-      if (gs.earlyTappers instanceof Set && gs.earlyTappers.has(oldId)) {
-        gs.earlyTappers.delete(oldId);
-        gs.earlyTappers.add(socket.id);
-      }
-      if (gs.answers instanceof Map && gs.answers.has(oldId)) {
-        gs.answers.set(socket.id, gs.answers.get(oldId));
-        gs.answers.delete(oldId);
-      }
-      if (gs.taps instanceof Map && gs.taps.has(oldId)) {
-        gs.taps.set(socket.id, gs.taps.get(oldId));
-        gs.taps.delete(oldId);
-      }
-      if (gs.pairsFound instanceof Map && gs.pairsFound.has(oldId)) {
-        gs.pairsFound.set(socket.id, gs.pairsFound.get(oldId));
-        gs.pairsFound.delete(oldId);
-      }
-      if (gs.progress instanceof Map && gs.progress.has(oldId)) {
-        gs.progress.set(socket.id, gs.progress.get(oldId));
-        gs.progress.delete(oldId);
-      }
-    }
-
-    socket.join(code);
-    return { room, rejoined: true };
+  if (!player || !player.disconnected || !tokenMatches(reconnectToken, player.reconnectTokenHash)) {
+    return { error: 'Invalid reconnect token', code: 'REJOIN_TOKEN_INVALID' };
   }
 
-  // No disconnected player with that name — try normal join
-  if (room.state === 'playing') return { error: 'Game in progress' };
-  return joinRoom(socket, code, name);
-}
-
-// Mark player as disconnected instead of removing immediately
-function disconnectPlayer(socketId) {
-  for (const [code, room] of rooms) {
-    if (room.players.has(socketId)) {
-      const player = room.players.get(socketId);
-
-      // Bots don't disconnect
-      if (player.isBot) continue;
-
-      // Mark as disconnected, start grace timer
-      player.disconnected = true;
-
-      const timer = setTimeout(() => {
-        graceTimers.delete(socketId);
-        finalizeLeave(socketId, code);
-      }, GRACE_PERIOD);
-
-      graceTimers.set(socketId, { timer, code, playerData: player });
-
-      return { code, room, gracePeriod: true };
-    }
-  }
-  return null;
-}
-
-// Actually remove player after grace period expires
-function finalizeLeave(socketId, code) {
-  const room = rooms.get(code);
-  if (!room || !room.players.has(socketId)) return null;
-
-  const player = room.players.get(socketId);
-  // Only remove if still disconnected (didn't rejoin)
-  if (!player.disconnected) return null;
-
-  room.players.delete(socketId);
-
-  if (room.host === socketId) {
-    // Find next non-bot human player to promote
-    let promoted = false;
-    for (const [id, p] of room.players) {
-      if (!p.isBot) {
-        room.host = id;
-        p.isHost = true;
-        promoted = true;
-        break;
-      }
-    }
-    if (!promoted) {
-      // No humans left, close room
-      rooms.delete(code);
-      return { code, closed: true };
-    }
-  }
-
-  if (room.players.size === 0) {
-    rooms.delete(code);
-    return { code, closed: true };
-  }
-
-  return { code, room };
-}
-
-// Legacy immediate leave (for explicit leave, not disconnect)
-function leaveRoom(socketId) {
-  // Cancel any grace timer
-  const grace = graceTimers.get(socketId);
+  const grace = graceTimers.get(oldId);
   if (grace) {
-    clearTimeout(grace.timer);
-    graceTimers.delete(socketId);
+    room.timerRegistry.cancel(grace.timer);
+    graceTimers.delete(oldId);
   }
 
-  for (const [code, room] of rooms) {
-    if (room.players.has(socketId)) {
-      room.players.delete(socketId);
-      if (room.host === socketId) {
-        let promoted = false;
-        for (const [id, p] of room.players) {
-          if (!p.isBot) {
-            room.host = id;
-            p.isHost = true;
-            promoted = true;
-            break;
-          }
-        }
-        if (!promoted) {
-          rooms.delete(code);
-          return { code, closed: true };
-        }
-      }
-      if (room.players.size === 0) {
-        rooms.delete(code);
-        return { code, closed: true };
-      }
-      return { code, room };
+  const nextToken = crypto.randomBytes(32).toString('base64url');
+  player.reconnectTokenHash = hashToken(nextToken);
+  player.disconnected = false;
+  room.players.delete(oldId);
+  room.players.set(socket.id, player);
+  if (room.host === oldId) room.host = socket.id;
+  if (room.gameState) migrateIdentity(room.gameState, oldId, socket.id);
+  attachSocket(socket, room, socket.id);
+  touch(room);
+  return { room, rejoined: true, playerId, reconnectToken: nextToken };
+}
+
+function disconnectPlayer(socketId, onFinalize) {
+  const membership = socketMembership.get(socketId);
+  socketMembership.delete(socketId);
+  if (!membership) return null;
+  const room = roomStore.get(membership.code);
+  const player = room?.players.get(membership.playerKey);
+  if (!room || !player || player.isBot) return null;
+
+  player.disconnected = true;
+  touch(room);
+  const timer = room.timerRegistry.timeout(() => {
+    graceTimers.delete(socketId);
+    const result = finalizeLeave(socketId, room.code);
+    if (result) onFinalize?.(result);
+  }, GRACE_PERIOD, 'grace');
+  graceTimers.set(socketId, { timer, code: room.code });
+  return { code: room.code, room, gracePeriod: true, playerName: player.name };
+}
+
+function promoteHost(room, departedId) {
+  if (room.host !== departedId) return;
+  for (const [id, player] of room.players) {
+    if (!player.isBot) {
+      room.host = id;
+      player.isHost = true;
+      return;
     }
   }
-  return null;
+  room.host = null;
+}
+
+function finalizeLeave(socketId, code) {
+  const room = roomStore.get(code);
+  const player = room?.players.get(socketId);
+  if (!room || !player || !player.disconnected) return null;
+  room.players.delete(socketId);
+  promoteHost(room, socketId);
+  touch(room);
+  const humans = [...room.players.values()].filter(p => !p.isBot);
+  if (humans.length === 0) {
+    destroyRoom(room, 'no-humans');
+    return { code, closed: true, reason: 'no-humans' };
+  }
+  return { code, room, playerName: player.name };
+}
+
+function leaveRoom(socketId) {
+  const membership = socketMembership.get(socketId);
+  socketMembership.delete(socketId);
+  if (!membership) return null;
+  const room = roomStore.get(membership.code);
+  if (!room) return null;
+  const player = room.players.get(membership.playerKey);
+  room.players.delete(membership.playerKey);
+  promoteHost(room, membership.playerKey);
+  if (![...room.players.values()].some(p => !p.isBot)) {
+    destroyRoom(room, 'no-humans');
+    return { code: room.code, closed: true };
+  }
+  touch(room);
+  return { code: room.code, room, playerName: player?.name };
+}
+
+function destroyRoom(roomOrCode, reason = 'destroyed') {
+  const room = typeof roomOrCode === 'string' ? roomStore.get(roomOrCode) : roomOrCode;
+  if (!room || roomStore.get(room.code) !== room) return false;
+  room.roomEpoch++;
+  room.timerRegistry?.cancelAll();
+  for (const [socketId, membership] of socketMembership) {
+    if (membership.code === room.code) socketMembership.delete(socketId);
+  }
+  for (const [socketId, grace] of graceTimers) {
+    if (grace.code === room.code) graceTimers.delete(socketId);
+  }
+  lifecycleHooks.disposeRoom?.(room, reason);
+  roomStore.delete(room.code);
+  return true;
 }
 
 function getRoom(code) {
-  return rooms.get(code) || null;
+  return roomStore.get(code) || null;
 }
 
 function getRoomBySocket(socketId) {
-  for (const [, room] of rooms) {
-    if (room.players.has(socketId)) return room;
-  }
-  return null;
+  const membership = socketMembership.get(socketId);
+  return membership ? getRoom(membership.code) : null;
 }
 
 function serializePlayers(room) {
-  const list = [];
-  for (const [id, p] of room.players) {
-    list.push({
-      id, name: p.name, score: p.score, isHost: p.isHost,
-      isBot: !!p.isBot, difficulty: p.difficulty || null,
-      diffEmoji: p.diffEmoji || null,
-      disconnected: !!p.disconnected
-    });
-  }
-  return list;
+  return [...room.players].map(([id, player]) => ({
+    id,
+    playerId: player.playerId || id,
+    name: player.name,
+    score: player.score,
+    isHost: player.isHost,
+    isBot: !!player.isBot,
+    difficulty: player.difficulty || null,
+    diffEmoji: player.diffEmoji || null,
+    disconnected: !!player.disconnected,
+  }));
 }
 
 function resetScores(room) {
-  for (const [, p] of room.players) p.score = 0;
+  for (const player of room.players.values()) player.score = 0;
+  touch(room);
 }
 
-// Clean up stale rooms (>2 hours)
-setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-  for (const [code, room] of rooms) {
-    if (room.createdAt < cutoff) rooms.delete(code);
+function getMetrics() {
+  const states = { lobby: 0, playing: 0, results: 0 };
+  let players = 0;
+  let timers = 0;
+  for (const room of roomStore.values()) {
+    states[room.state] = (states[room.state] || 0) + 1;
+    players += room.players.size;
+    timers += room.timerRegistry?.size || 0;
+  }
+  return { rooms: roomStore.size, players, roomStates: states, timers, graceSessions: graceTimers.size };
+}
+
+const sweepTimer = setInterval(() => {
+  const cutoff = Date.now() - INACTIVE_ROOM_TTL;
+  for (const room of roomStore.values()) {
+    if (room.lastActivityAt < cutoff) destroyRoom(room, 'inactive');
   }
 }, 60 * 1000);
+sweepTimer.unref?.();
 
 module.exports = {
-  createRoom, joinRoom, rejoinRoom, leaveRoom, disconnectPlayer, finalizeLeave,
-  getRoom, getRoomBySocket, serializePlayers, resetScores
+  configure, createRoom, joinRoom, rejoinRoom, leaveRoom, disconnectPlayer, finalizeLeave,
+  destroyRoom, getRoom, getRoomBySocket, serializePlayers, resetScores, migrateIdentity,
+  touch, getMetrics, _resetForTests() {
+    for (const room of [...roomStore.values()]) destroyRoom(room, 'test-reset');
+  },
 };
