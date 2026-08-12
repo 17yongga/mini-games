@@ -93,12 +93,19 @@ window.GameClients['word-scramble'] = {
     if (data.solvers.length === 0) {
       solvers.innerHTML = '<div class="game-status warning">Nobody got it! 😅</div>';
     } else {
-      data.solvers.forEach(s => {
-        solvers.innerHTML += `<div class="solver-item fade-in">
-          <span><span class="solver-rank">#${s.rank}</span> ${s.name} — ${(s.time / 1000).toFixed(1)}s</span>
-          <span>+${s.points}</span>
-        </div>`;
-      });
+      solvers.replaceChildren(...data.solvers.map(s => {
+        const row = document.createElement('div');
+        row.className = 'solver-item fade-in';
+        const summary = document.createElement('span');
+        const rank = document.createElement('span');
+        rank.className = 'solver-rank';
+        rank.textContent = `#${s.rank}`;
+        summary.append(rank, document.createTextNode(` ${s.name} — ${(s.time / 1000).toFixed(1)}s`));
+        const points = document.createElement('span');
+        points.textContent = `+${s.points}`;
+        row.append(summary, points);
+        return row;
+      }));
     }
   }
 };

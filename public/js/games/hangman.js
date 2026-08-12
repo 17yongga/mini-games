@@ -123,11 +123,13 @@ window.GameClients['hangman'] = {
     clearInterval(this._timer);
     const c = this.container;
 
-    const reasonMsg = {
-      solved: data.solver ? `🎉 ${data.solver.name} solved it!` : '🎉 Word completed!',
-      hanged: `💀 Nobody saved him... The word was:`,
-      timeout: `⏰ Time's up! The word was:`,
-    }[data.reason] || 'Round over!';
+    const reasonMsg = data.reason === 'solved'
+      ? (data.solver ? `🎉 ${data.solver.name} solved it!` : '🎉 Word completed!')
+      : data.reason === 'hanged'
+        ? '💀 Nobody saved him... The word was:'
+        : data.reason === 'timeout'
+          ? `⏰ Time's up! The word was:`
+          : 'Round over!';
 
     const bodyClass = data.reason === 'hanged' || data.reason === 'timeout' ? 'danger' : 'success';
 
@@ -137,11 +139,13 @@ window.GameClients['hangman'] = {
           ${this._svgGallows(data.wrongCount)}
         </div>
         <div class="hg-reveal-word" style="color:var(--${bodyClass === 'success' ? 'green' : 'red'})">${data.word}</div>
-        <div class="game-status ${bodyClass}">${reasonMsg}</div>
+        <div class="game-status ${bodyClass}" id="hg-reveal-status"></div>
         <div class="hg-reveal-hint">📂 ${data.hint}</div>
         <div style="margin-top:8px;color:var(--text-muted);font-size:0.85rem">Next round in a moment…</div>
       </div>
     `;
+    const status = c.querySelector('#hg-reveal-status');
+    if (status) status.textContent = reasonMsg;
   },
 
   _bindEvents() {

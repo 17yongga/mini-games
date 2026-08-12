@@ -150,9 +150,12 @@ window.GameClients['color-clash'] = {
         status.textContent = `Round ${data.round} — Answer was ${data.correctAnswer.toUpperCase()}`;
 
         if (data.results && data.results.length > 0) {
-          feedback.innerHTML = data.results.map(r =>
-            `<div class="cc-result-item">${r.correct ? '✅' : '❌'} ${r.name} ${r.correct ? `(${r.time}ms)` : ''}</div>`
-          ).join('');
+          feedback.replaceChildren(...data.results.map(r => {
+            const item = document.createElement('div');
+            item.className = 'cc-result-item';
+            item.textContent = `${r.correct ? '✅' : '❌'} ${r.name} ${r.correct ? `(${r.time}ms)` : ''}`;
+            return item;
+          }));
         } else {
           feedback.textContent = 'No answers this round!';
         }

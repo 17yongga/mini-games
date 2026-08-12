@@ -49,12 +49,15 @@ window.GameClients['emoji-match'] = {
 
     const isMyTurn = data.currentTurn === this.state.myId;
 
-    c.innerHTML = `
-      <div class="emoji-turn-info" id="em-turn">
-        ${isMyTurn ? '<span class="current">Your turn!</span>' : `${data.currentTurnName}'s turn`}
-      </div>
-      <div class="emoji-board" id="em-board" style="grid-template-columns:repeat(${this.cols}, 1fr)"></div>
-    `;
+    const turn = document.createElement('div');
+    turn.className = 'emoji-turn-info';
+    turn.id = 'em-turn';
+    this._setTurnText(turn, isMyTurn, data.currentTurnName);
+    const board = document.createElement('div');
+    board.className = 'emoji-board';
+    board.id = 'em-board';
+    board.style.gridTemplateColumns = `repeat(${this.cols}, 1fr)`;
+    c.replaceChildren(turn, board);
 
     const boardEl = document.getElementById('em-board');
     for (let i = 0; i < data.boardSize; i++) {
@@ -94,7 +97,12 @@ window.GameClients['emoji-match'] = {
     });
 
     const turn = document.getElementById('em-turn');
-    if (turn) turn.innerHTML = `<span class="current">${playerName} found a pair! 🎉</span>`;
+    if (turn) {
+      const message = document.createElement('span');
+      message.className = 'current';
+      message.textContent = `${playerName} found a pair! 🎉`;
+      turn.replaceChildren(message);
+    }
 
     // Unlock after match for the next pick (same player's turn continues)
     this.flippedCount = 0;
@@ -121,10 +129,17 @@ window.GameClients['emoji-match'] = {
     this.locked = false;
     const isMyTurn = currentTurn === this.state.myId;
     const turn = document.getElementById('em-turn');
-    if (turn) {
-      turn.innerHTML = isMyTurn
-        ? '<span class="current">Your turn!</span>'
-        : `${currentTurnName}'s turn`;
+    if (turn) this._setTurnText(turn, isMyTurn, currentTurnName);
+  },
+
+  _setTurnText(turn, isMyTurn, currentTurnName) {
+    if (isMyTurn) {
+      const message = document.createElement('span');
+      message.className = 'current';
+      message.textContent = 'Your turn!';
+      turn.replaceChildren(message);
+    } else {
+      turn.textContent = `${currentTurnName}'s turn`;
     }
   },
 
@@ -132,15 +147,21 @@ window.GameClients['emoji-match'] = {
     this.locked = true;
     const c = this.container;
     c.innerHTML = '<div class="game-status info">Round complete!</div>';
-    let html = '<div style="width:100%;margin-top:16px">';
+    const list = document.createElement('div');
+    list.style.width = '100%';
+    list.style.marginTop = '16px';
     results.forEach((r, i) => {
       const medal = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`;
-      html += `<div class="solver-item fade-in" style="animation-delay:${i * 0.1}s">
-        <span>${medal} ${r.name}</span>
-        <span>${r.pairs} pairs</span>
-      </div>`;
+      const row = document.createElement('div');
+      row.className = 'solver-item fade-in';
+      row.style.animationDelay = `${i * 0.1}s`;
+      const name = document.createElement('span');
+      name.textContent = `${medal} ${r.name}`;
+      const pairs = document.createElement('span');
+      pairs.textContent = `${r.pairs} pairs`;
+      row.append(name, pairs);
+      list.append(row);
     });
-    html += '</div>';
-    c.insertAdjacentHTML('beforeend', html);
+    c.append(list);
   }
 };

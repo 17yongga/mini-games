@@ -128,15 +128,15 @@ window.GameClients['type-racer'] = {
   _renderProgress(players) {
     const el = this._el('tr-progress-list');
     if (!el || !players || players.length === 0) return;
-    el.innerHTML = players.map(p => `
-      <div class="tr-player-row">
-        <span class="tr-player-name">${p.name}${p.finished ? ' ✅' : ''}</span>
-        <div class="tr-player-bar-track">
-          <div class="tr-player-bar-fill" style="width:${Math.round(p.pct * 100)}%"></div>
-        </div>
-        <span class="tr-player-pct">${Math.round(p.pct * 100)}%</span>
-      </div>
-    `).join('');
+    el.replaceChildren(...players.map(p => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(p.pct) * 100) || 0));
+      const row = document.createElement('div'); row.className = 'tr-player-row';
+      const name = document.createElement('span'); name.className = 'tr-player-name'; name.textContent = `${p.name}${p.finished ? ' ✅' : ''}`;
+      const track = document.createElement('div'); track.className = 'tr-player-bar-track';
+      const fill = document.createElement('div'); fill.className = 'tr-player-bar-fill'; fill.style.width = `${pct}%`;
+      const percent = document.createElement('span'); percent.className = 'tr-player-pct'; percent.textContent = `${pct}%`;
+      track.append(fill); row.append(name, track, percent); return row;
+    }));
   },
 
   // ─── state handler ────────────────────────────────────────────────────────
@@ -203,12 +203,16 @@ window.GameClients['type-racer'] = {
         status.textContent = `Round ${data.round} results`;
 
         if (progress) {
-          progress.innerHTML = (data.finishers && data.finishers.length > 0)
+          progress.replaceChildren(...((data.finishers && data.finishers.length > 0)
             ? data.finishers.map((f, i) => {
                 const medal = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`;
-                return `<div class="tr-result-row">${medal} <strong>${f.name}</strong> — ${f.wpm} WPM · ${Math.round(f.accuracy * 100)}% acc · +${f.score} pts</div>`;
-              }).join('')
-            : '<div class="tr-result-row">Nobody finished in time!</div>';
+                const row = document.createElement('div'); row.className = 'tr-result-row';
+                row.append(document.createTextNode(`${medal} `));
+                const name = document.createElement('strong'); name.textContent = f.name;
+                row.append(name, document.createTextNode(` — ${f.wpm} WPM · ${Math.round(f.accuracy * 100)}% acc · +${f.score} pts`));
+                return row;
+              })
+            : [Object.assign(document.createElement('div'), { className: 'tr-result-row', textContent: 'Nobody finished in time!' })]));
         }
       }
 

@@ -229,21 +229,6 @@ window.GameClients['color-picker'] = {
     const t = data.target;
     const medals = ['🥇', '🥈', '🥉'];
 
-    const rowsHTML = data.results.map((r, i) => {
-      const swatchBg = r.guess ? this._rgb(r.guess.r, r.guess.g, r.guess.b) : '#2a2a2a';
-      const swatchHex = r.guess ? this._hex(r.guess.r, r.guess.g, r.guess.b) : '—';
-      const accuracy = r.guess ? Math.round(Math.max(0, (1 - r.dist / 765) * 100)) : 0;
-      return `
-        <div class="cp-result-row">
-          <div class="cp-result-rank">${medals[i] || (i + 1)}</div>
-          <div class="cp-result-swatch" style="background:${swatchBg}" title="${swatchHex}"></div>
-          <div class="cp-result-name">${this._esc(r.name)}</div>
-          <div class="cp-result-dist">${r.guess ? `~${accuracy}%` : 'no sub'}</div>
-          <div class="cp-result-pts">+${r.points}</div>
-        </div>
-      `;
-    }).join('');
-
     main.innerHTML = `
       <div class="cp-wrap cp-result-wrap fade-in">
         <div class="cp-result-target">
@@ -253,10 +238,23 @@ window.GameClients['color-picker'] = {
             <div class="cp-result-target-sub">${this._hex(t.r, t.g, t.b)} · rgb(${t.r}, ${t.g}, ${t.b})</div>
           </div>
         </div>
-        ${rowsHTML}
+        <div id="cp-result-rows"></div>
         <div class="cp-next-msg">Next round starting…</div>
       </div>
     `;
+    const rows = main.querySelector('#cp-result-rows');
+    data.results.forEach((r, i) => {
+      const row = document.createElement('div'); row.className = 'cp-result-row';
+      const rank = document.createElement('div'); rank.className = 'cp-result-rank'; rank.textContent = medals[i] || (i + 1);
+      const swatch = document.createElement('div'); swatch.className = 'cp-result-swatch';
+      const swatchHex = r.guess ? this._hex(r.guess.r, r.guess.g, r.guess.b) : '—';
+      swatch.style.background = r.guess ? this._rgb(r.guess.r, r.guess.g, r.guess.b) : '#2a2a2a'; swatch.title = swatchHex;
+      const name = document.createElement('div'); name.className = 'cp-result-name'; name.textContent = r.name;
+      const accuracy = r.guess ? Math.round(Math.max(0, (1 - r.dist / 765) * 100)) : 0;
+      const distance = document.createElement('div'); distance.className = 'cp-result-dist'; distance.textContent = r.guess ? `~${accuracy}%` : 'no sub';
+      const points = document.createElement('div'); points.className = 'cp-result-pts'; points.textContent = `+${r.points}`;
+      row.append(rank, swatch, name, distance, points); rows.append(row);
+    });
   },
 
   cleanup() {

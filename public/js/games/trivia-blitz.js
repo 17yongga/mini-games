@@ -86,15 +86,18 @@ window.GameClients['trivia-blitz'] = {
     });
 
     // Show result summary below
-    const results = data.results.slice(0, 5);
-    let html = '<div style="margin-top:16px">';
-    results.forEach(r => {
-      html += `<div class="solver-item fade-in">
-        <span>${r.correct ? '✅' : '❌'} ${r.name}</span>
-        <span>${r.correct ? '+' + r.points : '0'} pts</span>
-      </div>`;
+    const summary = document.createElement('div');
+    summary.style.marginTop = '16px';
+    data.results.slice(0, 5).forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'solver-item fade-in';
+      const name = document.createElement('span');
+      name.textContent = `${r.correct ? '✅' : '❌'} ${r.name}`;
+      const points = document.createElement('span');
+      points.textContent = `${r.correct ? '+' + r.points : '0'} pts`;
+      row.append(name, points);
+      summary.append(row);
     });
-    html += '</div>';
-    this.container.insertAdjacentHTML('beforeend', html);
+    this.container.append(summary);
   }
 };

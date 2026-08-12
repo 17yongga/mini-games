@@ -106,12 +106,14 @@ window.GameClients['number-guess'] = {
                       data.hint === 'higher'  ? 'Go Higher' : 'Go Lower';
 
     entry.className = `ng-log-entry ${hintClass} fade-in`;
-    entry.innerHTML = `
-      <span class="ng-log-player">${this._esc(data.playerName)}</span>
-      guessed <strong>${data.guess}</strong>
-      <span class="ng-log-hint">${hintIcon} ${hintText}</span>
-      ${data.points ? `<span class="ng-log-points">+${data.points}</span>` : ''}
-    `;
+    const player = document.createElement('span'); player.className = 'ng-log-player'; player.textContent = data.playerName;
+    const guess = document.createElement('strong'); guess.textContent = data.guess;
+    const hint = document.createElement('span'); hint.className = 'ng-log-hint'; hint.textContent = `${hintIcon} ${hintText}`;
+    entry.append(player, document.createTextNode(' guessed '), guess, hint);
+    if (data.points) {
+      const points = document.createElement('span'); points.className = 'ng-log-points'; points.textContent = `+${data.points}`;
+      entry.append(points);
+    }
     logEl.prepend(entry);
   },
 
@@ -143,37 +145,36 @@ window.GameClients['number-guess'] = {
     this._stopTimer();
     const c = this.container;
 
-    const solvedMsg = data.solvers.length > 0
-      ? `🎉 <strong>${this._esc(data.solvers[0].name)}</strong> cracked it in ${data.solvers[0].guesses} guess${data.solvers[0].guesses > 1 ? 'es' : ''}!`
-      : data.reason === 'timeout'
-        ? `⏰ Time's up! Nobody guessed it.`
-        : `Nobody guessed the number.`;
-
     c.innerHTML = `
       <div class="ng-result fade-in">
         <div class="ng-result-number">${data.secret}</div>
         <div class="ng-result-label">was the secret number</div>
-        <div class="ng-result-msg">${solvedMsg}</div>
-        <div class="ng-result-log">
-          ${data.guessLog.length
-            ? data.guessLog.map(e => `
-              <div class="ng-log-entry ${e.hint === 'correct' ? 'ng-log-correct' : e.hint === 'higher' ? 'ng-log-higher' : 'ng-log-lower'}">
-                <span class="ng-log-player">${this._esc(e.playerName)}</span>
-                → ${e.guess}
-                ${e.hint === 'correct' ? '✅' : e.hint === 'higher' ? '⬆️' : '⬇️'}
-                ${e.points ? `<span class="ng-log-points">+${e.points}</span>` : ''}
-              </div>`).join('')
-            : '<div class="ng-log-empty">No guesses were made.</div>'
-          }
-        </div>
+        <div class="ng-result-msg"></div>
+        <div class="ng-result-log"></div>
         <div style="margin-top:10px;color:var(--text-muted);font-size:0.85rem">Next round starting…</div>
       </div>
     `;
-  },
-
-  _esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
+    const message = c.querySelector('.ng-result-msg');
+    if (data.solvers.length > 0) {
+      const solver = data.solvers[0];
+      message.append(document.createTextNode('🎉 '));
+      const name = document.createElement('strong'); name.textContent = solver.name;
+      message.append(name, document.createTextNode(` cracked it in ${solver.guesses} guess${solver.guesses > 1 ? 'es' : ''}!`));
+    } else {
+      message.textContent = data.reason === 'timeout' ? `⏰ Time's up! Nobody guessed it.` : 'Nobody guessed the number.';
+    }
+    const log = c.querySelector('.ng-result-log');
+    if (!data.guessLog.length) {
+      const empty = document.createElement('div'); empty.className = 'ng-log-empty'; empty.textContent = 'No guesses were made.'; log.append(empty);
+    } else {
+      data.guessLog.forEach(e => {
+        const row = document.createElement('div');
+        row.className = `ng-log-entry ${e.hint === 'correct' ? 'ng-log-correct' : e.hint === 'higher' ? 'ng-log-higher' : 'ng-log-lower'}`;
+        const name = document.createElement('span'); name.className = 'ng-log-player'; name.textContent = e.playerName;
+        row.append(name, document.createTextNode(` → ${e.guess} ${e.hint === 'correct' ? '✅' : e.hint === 'higher' ? '⬆️' : '⬇️'}`));
+        if (e.points) { const points = document.createElement('span'); points.className = 'ng-log-points'; points.textContent = `+${e.points}`; row.append(points); }
+        log.append(row);
+      });
+    }
   }
 };

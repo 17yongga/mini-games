@@ -103,32 +103,45 @@ window.GameClients['geography-quiz'] = {
 
     // Round results
     const results = data.results || [];
-    let html = '<div style="margin-top:16px">';
+    const summary = document.createElement('div');
+    summary.style.marginTop = '16px';
     if (results.length === 0) {
-      html += '<div style="color:#888;text-align:center">No one answered!</div>';
+      const empty = document.createElement('div');
+      empty.style.color = '#888';
+      empty.style.textAlign = 'center';
+      empty.textContent = 'No one answered!';
+      summary.append(empty);
     }
     results.forEach(r => {
-      html += `<div class="solver-item fade-in">
-        <span>${r.correct ? '✅' : '❌'} ${r.name}</span>
-        <span>${r.correct ? '+' + r.points : '0'} pts</span>
-      </div>`;
+      summary.append(this._resultRow(`${r.correct ? '✅' : '❌'} ${r.name}`, `${r.correct ? '+' + r.points : '0'} pts`));
     });
-    html += '</div>';
 
     // Scoreboard
     if (data.scores && data.scores.length) {
-      html += '<div style="margin-top:12px;border-top:1px solid #333;padding-top:8px">';
-      html += '<div style="font-size:12px;color:#888;margin-bottom:6px;text-align:center">SCOREBOARD</div>';
+      const scoreboard = document.createElement('div');
+      scoreboard.style.cssText = 'margin-top:12px;border-top:1px solid #333;padding-top:8px';
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-size:12px;color:#888;margin-bottom:6px;text-align:center';
+      heading.textContent = 'SCOREBOARD';
+      scoreboard.append(heading);
       data.scores.forEach((s, i) => {
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
-        html += `<div class="solver-item fade-in">
-          <span>${medal} ${s.name}</span>
-          <span>${s.score} pts</span>
-        </div>`;
+        scoreboard.append(this._resultRow(`${medal} ${s.name}`, `${s.score} pts`));
       });
-      html += '</div>';
+      summary.append(scoreboard);
     }
 
-    this.container.insertAdjacentHTML('beforeend', html);
+    this.container.append(summary);
+  },
+
+  _resultRow(label, score) {
+    const row = document.createElement('div');
+    row.className = 'solver-item fade-in';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const points = document.createElement('span');
+    points.textContent = score;
+    row.append(name, points);
+    return row;
   }
 };
