@@ -1,4 +1,5 @@
 // Hangman — multiplayer word guessing, shared hangman, race to solve
+const { plainObject, boundedString, migrateIdentity } = require('./_shared');
 
 const WORDS = [
   // Tech
@@ -113,6 +114,7 @@ module.exports = {
     gs.correctLetters = [];
     gs.roundSolver = null;
     gs.letterContributors = {};
+    gs.wordAttempts = new Map();
     gs.phase = 'playing';
     gs.roundStart = Date.now();
     gs.revealFired = false;
@@ -138,10 +140,10 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (gs.phase !== 'playing') return;
+    if (gs.phase !== 'playing' || !plainObject(data) || Date.now() - gs.roundStart > ROUND_TIME * 1000) return;
 
     const player = room.players.get(socket.id);
-    if (!player) return;
+    if (!player || player.disconnected) return;
 
     if (event === 'guess_letter') {
       this._handleLetterGuess(room, socket, player, data, io);
@@ -152,9 +154,9 @@ module.exports = {
 
   _handleLetterGuess(room, socket, player, data, io) {
     const gs = room.gameState;
-    const letter = (data.letter || '').toUpperCase().trim();
-
-    if (!letter || letter.length !== 1 || !/[A-Z]/.test(letter)) return;
+    if (!boundedString(data.letter, 1)) return;
+    const letter = data.letter.toUpperCase();
+    if (!/^[A-Z]$/.test(letter)) return;
     if (gs.wrongLetters.includes(letter) || gs.correctLetters.includes(letter)) {
       socket.emit('game:state', { phase: 'already_guessed', letter });
       return;
@@ -212,9 +214,12 @@ module.exports = {
 
   _handleWordGuess(room, socket, player, data, io) {
     const gs = room.gameState;
-    const guess = (data.word || '').toUpperCase().trim();
-
-    if (!guess) return;
+    if (!boundedString(data.word, 32)) return;
+    const guess = data.word.toUpperCase().trim();
+    if (!/^[A-Z]+$/.test(guess)) return;
+    const attempts = gs.wordAttempts.get(socket.id) || 0;
+    if (attempts >= 3) return;
+    gs.wordAttempts.set(socket.id, attempts + 1);
     if (guess === gs.word) {
       // Correct full word guess!
       if (!gs.roundSolver) {
@@ -237,21 +242,25 @@ module.exports = {
     if (gs.revealFired) return;
     gs.revealFired = true;
     gs.phase = 'reveal';
+    gs.revealReason = reason;
 
     if (gs.roundTimer) {
       clearTimeout(gs.roundTimer);
       gs.roundTimer = null;
     }
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'reveal',
+      round: gs.round,
+      totalRounds: gs.totalRounds,
       word: gs.word,
       hint: gs.hint,
       wrongLetters: gs.wrongLetters,
       wrongCount: gs.wrongLetters.length,
       reason,
       solver: gs.roundSolver,
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), 5000);
     this._addTimer(room, t);
@@ -332,26 +341,22 @@ module.exports = {
         phase: 'playing',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        word: gs.word,
         blanks: gs.blanks,
         correctLetters: gs.correctLetters,
         wrongLetters: gs.wrongLetters,
-        wrongCount: gs.wrongCount,
-        maxWrong: gs.maxWrong
+        wrongCount: gs.wrongLetters.length,
+        maxWrong: MAX_WRONG,
+        hint: gs.hint,
+        timeLimit: Math.max(0, ROUND_TIME * 1000 - (Date.now() - gs.roundStart))
       };
     }
     if (gs.phase === 'reveal') {
-      return {
-        phase: 'reveal',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        word: gs.word,
-        winner: gs.winner,
-        reason: gs.reason
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['wordAttempts'] }); if (room.gameState?.roundSolver?.id === oldId) room.gameState.roundSolver.id = newId; if (room.gameState?.letterContributors?.[oldId] !== undefined) { room.gameState.letterContributors[newId] = room.gameState.letterContributors[oldId]; delete room.gameState.letterContributors[oldId]; } },
 
   cleanup(room) {
     if (room._hgTimers) {

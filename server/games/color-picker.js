@@ -1,4 +1,5 @@
 // Color Picker — Match the target color by mixing RGB sliders!
+const { plainObject, finiteInteger, activePlayerIds, migrateIdentity } = require('./_shared');
 // Players adjust R, G, B sliders to get as close as possible to a shown target color.
 // Score = accuracy (closeness) * speed bonus. 8 rounds.
 
@@ -93,12 +94,13 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'submit' || gs.phase !== 'picking') return;
+    if (event !== 'submit' || gs.phase !== 'picking' || !plainObject(data) || Date.now() - gs.roundStart > ROUND_TIME_MS) return;
     if (gs.submissions.has(socket.id)) return;
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
 
-    const r = Math.max(0, Math.min(255, parseInt(data.r) || 0));
-    const g = Math.max(0, Math.min(255, parseInt(data.g) || 0));
-    const b = Math.max(0, Math.min(255, parseInt(data.b) || 0));
+    if (![data.r, data.g, data.b].every(v => finiteInteger(v, 0, 255))) return;
+    const { r, g, b } = data;
 
     const responseTime = Date.now() - gs.roundStart;
     const dist = colorDistance({ r, g, b }, gs.target);
@@ -106,8 +108,7 @@ module.exports = {
 
     gs.submissions.set(socket.id, { r, g, b, dist, points, responseTime });
 
-    const player = room.players.get(socket.id);
-    if (player) player.score += points;
+    player.score += points;
 
     socket.emit('game:state', {
       phase: 'submitted',
@@ -118,7 +119,7 @@ module.exports = {
 
     // Resolve early if everyone submitted
     let allSubmitted = true;
-    for (const [id] of room.players) {
+    for (const id of activePlayerIds(room)) {
       if (!gs.submissions.has(id)) { allSubmitted = false; break; }
     }
     if (allSubmitted) this._resolveRound(room, io);
@@ -147,7 +148,8 @@ module.exports = {
         results.push({ name: p.name, guess: null, dist: 9999, points: 0 });
       }
     }
-    results.sort((a, b) => a.dist - b.dist);
+    results.sort((a, b) => b.points - a.points || a.dist - b.dist || a.name.localeCompare(b.name));
+    gs.results = results.slice(0, 10);
 
     const scores = [];
     for (const [, p] of room.players) {
@@ -155,13 +157,15 @@ module.exports = {
     }
     scores.sort((a, b) => b.score - a.score);
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'result',
       round: gs.round,
+      totalRounds: gs.totalRounds,
       target: gs.target,
-      results: results.slice(0, 10),
+      results: gs.results,
       scores
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), RESULT_SHOW_MS);
     this._addTimer(room, t);
@@ -199,7 +203,7 @@ module.exports = {
     };
   },
 
-  getReconnectState(room) {
+  getReconnectState(room, playerId) {
     const gs = room.gameState;
     if (!gs) return null;
     if (gs.phase === 'picking') {
@@ -210,20 +214,17 @@ module.exports = {
         round: gs.round,
         totalRounds: gs.totalRounds,
         target: gs.target,
-        timeLimit: remaining
+        timeLimit: remaining,
+        submitted: gs.submissions.has(playerId)
       };
     }
     if (gs.phase === 'result') {
-      return {
-        phase: 'result',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        target: gs.target,
-        results: gs.results
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['submissions'] }); },
 
   cleanup(room) {
     if (room._cpTimers) {

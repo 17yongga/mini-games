@@ -1,4 +1,6 @@
 // Emoji Match — competitive memory card game, find pairs fastest
+const { plainObject, finiteInteger, migrateIdentity } = require('./_shared');
+const TURN_MS = 15000;
 
 const EMOJI_POOL = [
   '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼',
@@ -75,6 +77,7 @@ module.exports = {
 
     gs.phase = 'playing';
     gs.currentTurn = gs.turnOrder[0];
+    this._armTurn(room, io);
 
     io.to(room.code).emit('game:state', {
       phase: 'playing',
@@ -89,12 +92,13 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'flip' || gs.phase !== 'playing') return;
+    if (event !== 'flip' || gs.phase !== 'playing' || !plainObject(data)) return;
     if (socket.id !== gs.currentTurn) return;
+    if (room.players.get(socket.id)?.disconnected) return;
     if (gs.locked) return; // BUG FIX: reject clicks during animation
 
     const idx = data.index;
-    if (idx < 0 || idx >= gs.boardSize || gs.revealed[idx]) return;
+    if (!finiteInteger(idx) || Date.now() > gs.turnDeadline || idx < 0 || idx >= gs.boardSize || gs.revealed[idx]) return;
 
     // BUG FIX: can't click same card as first pick
     if (gs.firstPick === idx) return;
@@ -174,6 +178,11 @@ module.exports = {
     // If secondPick is already set, ignore (triple-click protection)
   },
 
+  _armTurn(room, io) {
+    const gs = room.gameState; gs.turnDeadline = Date.now() + TURN_MS; const round = gs.round; const turn = gs.currentTurn;
+    const t = setTimeout(() => { if (gs.phase === 'playing' && gs.round === round && gs.currentTurn === turn) { gs.firstPick = null; gs.secondPick = null; gs.locked = false; this._advanceTurn(room, io); } }, TURN_MS); this._addTimer(room, t);
+  },
+
   _advanceTurn(room, io) {
     const gs = room.gameState;
     if (gs.turnOrder.length === 0) return;
@@ -184,15 +193,16 @@ module.exports = {
       gs.turnIndex = (gs.turnIndex + 1) % gs.turnOrder.length;
       gs.currentTurn = gs.turnOrder[gs.turnIndex];
       attempts++;
-    } while (!room.players.has(gs.currentTurn) && attempts < gs.turnOrder.length);
+    } while ((!room.players.has(gs.currentTurn) || room.players.get(gs.currentTurn)?.disconnected) && attempts < gs.turnOrder.length);
 
     // If nobody valid found, end round
-    if (!room.players.has(gs.currentTurn)) {
+    if (!room.players.has(gs.currentTurn) || room.players.get(gs.currentTurn)?.disconnected) {
       this._roundResult(room, io);
       return;
     }
 
     const player = room.players.get(gs.currentTurn);
+    this._armTurn(room, io);
     io.to(room.code).emit('game:state', {
       phase: 'turn',
       currentTurn: gs.currentTurn,
@@ -211,8 +221,10 @@ module.exports = {
       if (p) results.push({ id, name: p.name, pairs: count });
     }
     results.sort((a, b) => b.pairs - a.pairs);
+    gs.results = results;
 
-    io.to(room.code).emit('game:state', { phase: 'roundResult', results });
+    gs.resultState = { phase: 'roundResult', round: gs.round, totalRounds: gs.totalRounds, results };
+    io.to(room.code).emit('game:state', gs.resultState);
     const t = setTimeout(() => this._nextRound(room, io), 4000);
     this._addTimer(room, t);
   },
@@ -238,7 +250,7 @@ module.exports = {
         phase: 'playing',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        board: gs.board,
+        board: gs.board.map((emoji, i) => gs.revealed[i] || i === gs.firstPick || i === gs.secondPick ? emoji : null),
         revealed: gs.revealed,
         boardSize: gs.boardSize,
         currentTurn: gs.currentTurn,
@@ -248,15 +260,13 @@ module.exports = {
       };
     }
     if (gs.phase === 'roundResult') {
-      return {
-        phase: 'roundResult',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        roundWinner: gs.roundWinner
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['pairsFound'], ids: ['currentTurn'], idArrays: ['turnOrder'] }); },
+  onPresenceChanged(room, io) { const gs = room.gameState; if (gs?.phase === 'playing' && room.players.get(gs.currentTurn)?.disconnected) { gs.firstPick = null; gs.secondPick = null; gs.locked = false; this._advanceTurn(room, io); } },
 
   cleanup(room) {
     if (room._emTimers) {

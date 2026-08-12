@@ -1,4 +1,5 @@
 // Trivia Blitz — fast multiple-choice questions, points for speed + correctness
+const { plainObject, finiteInteger, migrateIdentity } = require('./_shared');
 
 const QUESTIONS = [
   // Science & Nature
@@ -166,9 +167,11 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'answer' || gs.phase !== 'question') return;
+    if (event !== 'answer' || gs.phase !== 'question' || !plainObject(data)) return;
     if (gs.answers.has(socket.id)) return;
-    if (typeof data.choice !== 'number') return; // validate input
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
+    if (!finiteInteger(data.choice, 0, 3) || Date.now() - gs.questionStart > 10000) return;
 
     const elapsed = Date.now() - gs.questionStart;
     gs.answers.set(socket.id, { choice: data.choice, time: elapsed });
@@ -214,13 +217,19 @@ module.exports = {
       results.push({ id, name: player.name, correct, points, time: ans.time });
     }
     results.sort((a, b) => b.points - a.points);
+    gs.results = results;
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'answer',
+      round: gs.round,
+      totalRounds: gs.totalRounds,
+      question: q.q,
+      options: q.options,
       correctIndex: q.answer,
       correctText: q.options[q.answer],
       results
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextQuestion(room, io), 4000);
     this._addTimer(room, t);
@@ -243,20 +252,21 @@ module.exports = {
     room.state = 'results';
   },
 
-  getReconnectState(room) {
+  getReconnectState(room, playerId) {
     const gs = room.gameState;
     if (!gs) return null;
     if (gs.phase === 'question') {
       const q = gs.questions[gs.round - 1];
       const elapsed = Date.now() - gs.questionStart;
-      const remaining = Math.max(0, 15000 - elapsed);
+      const remaining = Math.max(0, 10000 - elapsed);
       return {
         phase: 'question',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        question: q?.question,
+        question: q.q,
         options: q?.options,
-        timeLimit: remaining,
+        timeLimit: Math.ceil(remaining / 1000),
+        answered: gs.answers.has(playerId),
         answeredPlayers: Array.from(gs.answers.keys()).map(id => {
           const p = room.players.get(id);
           return p ? p.name : 'Unknown';
@@ -264,18 +274,14 @@ module.exports = {
       };
     }
     if (gs.phase === 'answer') {
-      const q = gs.questions[gs.round - 1];
-      return {
-        phase: 'answer',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        question: q?.question,
-        options: q?.options,
-        correctIndex: q?.answer,
-        results: gs.results
-      };
+      return { ...gs.resultState };
     }
     return null;
+  },
+
+  migratePlayerIdentity(room, oldId, newId) {
+    migrateIdentity(room.gameState, oldId, newId, { maps: ['answers'] });
+    (room.gameState?.results || []).forEach(r => { if (r.id === oldId) r.id = newId; });
   },
 
   cleanup(room) {

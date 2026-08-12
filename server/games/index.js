@@ -6,7 +6,7 @@ const path = require('path');
 const games = new Map();
 
 fs.readdirSync(__dirname)
-  .filter(f => f !== 'index.js' && f.endsWith('.js'))
+  .filter(f => f !== 'index.js' && !f.startsWith('_') && f.endsWith('.js'))
   .forEach(f => {
     const game = require(path.join(__dirname, f));
     games.set(game.id, game);

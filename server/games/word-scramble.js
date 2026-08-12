@@ -1,4 +1,5 @@
 // Word Scramble — unscramble the word, first correct answer scores most
+const { plainObject, boundedString, migrateIdentity } = require('./_shared');
 
 const WORDS = [
   'PYTHON', 'ROCKET', 'PLANET', 'GUITAR', 'CASTLE', 'BRIDGE', 'FROZEN',
@@ -11,13 +12,13 @@ const WORDS = [
 ];
 
 function scramble(word) {
-  const arr = word.split('');
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  if (new Set(word).size < 2) return word;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const arr = word.split('');
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    const result = arr.join(''); if (result !== word) return result;
   }
-  const result = arr.join('');
-  return result === word ? scramble(word) : result;
+  return word.slice(1) + word[0];
 }
 
 module.exports = {
@@ -63,6 +64,8 @@ module.exports = {
     const word = gs.words[gs.round - 1];
     gs.phase = 'scrambled';
     gs.roundStart = Date.now();
+    gs.deadlineAt = gs.roundStart + 15000;
+    gs.scrambled = scramble(word);
 
     const thisRound = gs.round;
 
@@ -70,7 +73,7 @@ module.exports = {
       phase: 'scrambled',
       round: gs.round,
       totalRounds: gs.totalRounds,
-      scrambled: scramble(word),
+      scrambled: gs.scrambled,
       wordLength: word.length,
       timeLimit: 15
     });
@@ -84,17 +87,17 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'guess' || gs.phase !== 'scrambled') return;
+    if (event !== 'guess' || gs.phase !== 'scrambled' || !plainObject(data) || !boundedString(data.guess, 64) || Date.now() > gs.deadlineAt) return;
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
 
     const word = gs.words[gs.round - 1];
-    const guess = (data.guess || '').toUpperCase().trim();
+    const guess = data.guess.toUpperCase().trim();
 
     if (guess === word) {
       if (gs.solvers.find(s => s.id === socket.id)) return;
 
       const elapsed = Date.now() - gs.roundStart;
-      const player = room.players.get(socket.id);
-      if (!player) return;
       const rank = gs.solvers.length + 1;
 
       const pointTable = [150, 100, 75, 50];
@@ -128,11 +131,16 @@ module.exports = {
     }
 
     const word = gs.words[gs.round - 1];
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'reveal',
+      round: gs.round,
+      totalRounds: gs.totalRounds,
       word,
+      scrambled: gs.scrambled,
+      wordLength: word.length,
       solvers: gs.solvers
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), 4000);
     this._addTimer(room, t);
@@ -156,28 +164,24 @@ module.exports = {
     if (!gs) return null;
     if (gs.phase === 'scrambled') {
       const elapsed = Date.now() - gs.roundStart;
-      const remaining = Math.max(0, 25000 - elapsed);
+      const remaining = Math.max(0, 15000 - elapsed);
       return {
         phase: 'scrambled',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        scrambledWord: gs.scrambledWords[gs.round - 1],
+        scrambled: gs.scrambled,
+        wordLength: gs.words[gs.round - 1].length,
         timeLimit: remaining,
         solvers: gs.solvers
       };
     }
     if (gs.phase === 'reveal') {
-      return {
-        phase: 'reveal',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        originalWord: gs.words[gs.round - 1],
-        scrambledWord: gs.scrambledWords[gs.round - 1],
-        solvers: gs.solvers
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { objectArrays: ['solvers'] }); },
 
   cleanup(room) {
     if (room._wsTimers) {
