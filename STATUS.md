@@ -1,11 +1,12 @@
 # Mini Games — STATUS.md
-> Updated: 2026-03-17
+> Updated: 2026-08-12
 
 ## What's Live
-- **URL:** https://api.gary-yong.com/play/
+- **Canonical URL:** https://play.gary-yong.com/
+- **Legacy URL:** https://api.gary-yong.com/play/ → `301` redirect to the canonical host
 - **Server:** EC2, PM2 process `mini-games`, port 3004, nginx proxied
 - **13 games:** Emoji Match, Math Blitz, Reaction Race, Simon Says, Tap Frenzy, Trivia Blitz, Word Scramble, Type Racer, Color Clash, Hangman, Number Guess, Geography Quiz, Color Picker
-- **Features:** Room codes, shareable links, AI bots (3 difficulty levels, all working), player reconnection with state restore, no login required
+- **Features:** Room codes, shareable links, AI bots (3 difficulty levels), secure token-based reconnect with state restore, server-authoritative timing, complete guides, responsive Arcade Field Guide UI, no login required
 - **Also listed on:** gary-yong.com/projects.html (Previous Projects section)
 
 ## Architecture
@@ -13,10 +14,21 @@
 - Main server: `server/server.js`
 - Bot framework: `server/bots.js` — supports both inline polling (legacy 9 games) and getBotMove() return pattern (newer 4 games) via unified dispatcher
 
-## Current State (2026-03-17)
-- All 13 games functional and deployed
+## Current State (2026-08-12)
+- All 13 games audited, remediated, independently reviewed, and deployed as release `3613149`
+- Canonical subdomain, dedicated TLS certificate, root asset routing, health endpoint, and Socket.IO transport verified
+- Final release gate: 54/54 tests, 47 JavaScript syntax checks, 13 guides/13 clients, desktop/mobile browser smoke, `npm audit --omit=dev` = 0 vulnerabilities
+- Production rollback: `/home/ubuntu/mini-games-previous-20260812-172317` and `/home/ubuntu/backups/mini-games-20260812-172317`
 - **New game development PAUSED** — 13 games is enough. Focus is bot quality + UX polish.
-- **Comprehensive audit complete** — see `AUDIT-2026-03-15.md`
+- **Comprehensive audit complete** — see `AUDIT-2026-08-12.md`
+
+## Completed This Sprint (2026-08-12)
+- ✅ **Server authority/security:** Secure rotating reconnect tokens, strict Socket.IO contracts, generic identity migration, rate/room limits, timer containment, active-room TTL, health metrics, and zero known production dependency vulnerabilities.
+- ✅ **All-game remediation:** Corrected scoring, input validation, stale/duplicate actions, timers, bot contracts, reconnect serializers, hidden state, and disconnect behavior across all 13 games.
+- ✅ **Reaction fairness:** Server-monotonic timing, trusted RTT calibration, bounded compensation, uncertainty-aware ties, and a 300ms fairness collection window.
+- ✅ **Rendering security:** Removed player-name HTML injection across all game clients and added exhaustive malicious-name DOM/static tests.
+- ✅ **Arcade Field Guide:** Distinctive non-purple/non-blue editorial system, desktop/mobile layouts, keyboard/touch controls, reduced-motion support, accessible semantics, and complete game guides.
+- ✅ **Domain migration:** `play.gary-yong.com` is live with dedicated TLS; the old `/play/` path redirects while the old Socket.IO route remains temporarily compatible.
 
 ## Completed This Sprint (2026-03-17)
 - ✅ **Tutorial overlays:** Added how-to-play tutorial to all 13 games. Shows animated overlay at round start with game-specific instructions. reaction-race has 4.5s ghost round demo; trivia-blitz and others use overlay with rule descriptions. Overlay positions correctly across all screen sizes.
@@ -47,6 +59,7 @@
 
 ## Deploy
 ```bash
-rsync -avz --exclude node_modules -e "ssh -i ~/.ssh/id_ed25519" ~/clawd/mini-games/ ubuntu@52.86.178.139:/home/ubuntu/mini-games/
-ssh ubuntu@52.86.178.139 -i ~/.ssh/id_ed25519 "pm2 restart mini-games"
+# Production is released from an immutable git archive into
+# /home/ubuntu/mini-games-releases/<commit>, then promoted at
+# /home/ubuntu/mini-games and restarted with PM2 process mini-games.
 ```
