@@ -32,6 +32,7 @@ module.exports = {
       pairsFound: new Map(),
       turnOrder: [],
       turnIndex: 0,
+      turnEpoch: 0,
       boardSize: 16
     };
     room._emTimers = []; // track all emoji-match timers
@@ -92,7 +93,7 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'flip' || gs.phase !== 'playing' || !plainObject(data)) return;
+    if (event !== 'flip' || gs.phase !== 'playing' || !plainObject(data) || Object.keys(data).length !== 1) return;
     if (socket.id !== gs.currentTurn) return;
     if (room.players.get(socket.id)?.disconnected) return;
     if (gs.locked) return; // BUG FIX: reject clicks during animation
@@ -156,7 +157,8 @@ module.exports = {
             const t2 = setTimeout(() => this._roundResult(room, io), 1500);
             this._addTimer(room, t2);
           }
-          // Match = same player goes again, no need to advance turn
+          // Match = same player goes again with a fresh, independently tokened deadline.
+          else this._armTurn(room, io);
         }, 800);
         this._addTimer(room, t);
       } else {
@@ -179,8 +181,17 @@ module.exports = {
   },
 
   _armTurn(room, io) {
-    const gs = room.gameState; gs.turnDeadline = Date.now() + TURN_MS; const round = gs.round; const turn = gs.currentTurn;
-    const t = setTimeout(() => { if (gs.phase === 'playing' && gs.round === round && gs.currentTurn === turn) { gs.firstPick = null; gs.secondPick = null; gs.locked = false; this._advanceTurn(room, io); } }, TURN_MS); this._addTimer(room, t);
+    const gs = room.gameState;
+    if (gs.turnTimer) clearTimeout(gs.turnTimer);
+    gs.turnEpoch++;
+    gs.turnDeadline = Date.now() + TURN_MS;
+    const round = gs.round, turn = gs.currentTurn, turnEpoch = gs.turnEpoch;
+    gs.turnTimer = setTimeout(() => {
+      if (gs.phase === 'playing' && gs.round === round && gs.currentTurn === turn && gs.turnEpoch === turnEpoch) {
+        gs.firstPick = null; gs.secondPick = null; gs.locked = false; this._advanceTurn(room, io);
+      }
+    }, TURN_MS);
+    this._addTimer(room, gs.turnTimer);
   },
 
   _advanceTurn(room, io) {
@@ -214,6 +225,7 @@ module.exports = {
     const gs = room.gameState;
     if (gs.phase === 'roundResult' || gs.phase === 'finished') return; // prevent double-fire
     gs.phase = 'roundResult';
+    if (gs.turnTimer) { clearTimeout(gs.turnTimer); gs.turnTimer = null; }
 
     const results = [];
     for (const [id, count] of gs.pairsFound) {

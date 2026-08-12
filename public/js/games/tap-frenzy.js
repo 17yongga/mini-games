@@ -4,12 +4,14 @@ window.GameClients['tap-frenzy'] = {
     this.container = container;
     this.socket = socket;
     this.myTaps = 0;
+    this.roundId = null;
     this.countdownInterval = null;
     container.innerHTML = '<div class="game-status info">Get those fingers ready...</div>';
   },
 
   onState(data) {
     const c = this.container;
+    if (Number.isSafeInteger(data.roundId)) this.roundId = data.roundId;
 
     switch (data.phase) {
       case 'countdown':
@@ -59,7 +61,7 @@ window.GameClients['tap-frenzy'] = {
       usingTouch = true;
       this.myTaps++;
       zone.textContent = this.myTaps;
-      this.socket.emit('game:event', { event: 'tap', data: {} });
+      this.socket.emit('game:event', { event: 'tap', data: { roundId: this.roundId } });
     }, { passive: false });
 
     zone.addEventListener('click', (e) => {
@@ -68,7 +70,7 @@ window.GameClients['tap-frenzy'] = {
       e.preventDefault();
       this.myTaps++;
       zone.textContent = this.myTaps;
-      this.socket.emit('game:event', { event: 'tap', data: {} });
+      this.socket.emit('game:event', { event: 'tap', data: { roundId: this.roundId } });
     });
 
     // Timer countdown

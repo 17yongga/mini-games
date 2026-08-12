@@ -21,12 +21,13 @@ test('type-racer initializes five unique non-empty sentences', () => {
   } finally { cleanup(game, room); }
 });
 
-test('type-racer uses server monotonic receipt time and ignores client elapsed', () => {
+test('type-racer uses server monotonic receipt time and rejects client elapsed', () => {
   const { room, io, sentence, roundId } = setup();
   try {
     room.setNow(room.gameState.phaseStartedAt + 6000);
     const socket = makeSocket('p1');
-    const result = game.onEvent(room, socket, 'finish', { typed: sentence, elapsed: 1, roundId }, io);
+    assert.equal(game.onEvent(room, socket, 'finish', { typed: sentence, elapsed: 1, roundId }, io).code, 'INVALID_PAYLOAD');
+    const result = game.onEvent(room, socket, 'finish', { typed: sentence, roundId }, io);
     assert.deepEqual(result, { ok: true });
     assert.equal(room.gameState.finishers[0].elapsed, 6000);
     assert.ok(room.gameState.finishers[0].wpm < 240);

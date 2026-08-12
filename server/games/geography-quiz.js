@@ -341,7 +341,7 @@ module.exports = {
         totalRounds: gs.totalRounds,
         question: q.q,
         options: q?.options,
-        timeLimit: remaining
+        timeLimit: remaining / 1000
       };
     }
     if (gs.phase === 'answer') {

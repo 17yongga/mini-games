@@ -10,7 +10,8 @@ assert(main.includes("io(window.location.origin"),'socket must use same origin')
 assert(main.includes('reconnectToken')&&main.includes('playerId')&&main.includes('clientInstanceId'),'secure reconnect fields required');
 const sessionBody=main.slice(main.indexOf("sessionStorage.setItem('mg-session'"),main.indexOf('function getSession'));
 assert(!sessionBody.includes('isHost'),'host authority must not be persisted');
-assert(main.includes('gameSnapshot||res.snapshot'),'rejoin snapshot must survive dynamic load');
+assert(/startGame\(\{gameId:res\.gameId[\s\S]*snapshot:res\.gameState\|\|null/.test(main),'rejoin must pass the authoritative snapshot into async game loading');
+assert(/if\(snapshot\)dispatchGame\('game:state',snapshot\)/.test(main),'rejoin snapshot must be dispatched only after the dynamic client initializes');
 assert(main.includes('hasConnected&&connectionWasLost'),'recovery badge must require a real prior disconnect');
 assert(main.includes('function selectGame(')&&main.includes("'Home','End'"),'radio selection must support pointer and keyboard navigation');
 assert(main.includes('destroyCurrentGame')&&main.includes("client?.destroy?.()"),'lifecycle owner required');

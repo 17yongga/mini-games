@@ -4,7 +4,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
-const { monitorEventLoopDelay } = require('perf_hooks');
+const { monitorEventLoopDelay, performance } = require('perf_hooks');
 const { Server } = require('socket.io');
 const rooms = require('./rooms');
 const games = require('./games');
@@ -127,7 +127,31 @@ function identityResponse(result) {
 }
 
 io.on('connection', (socket) => {
+  socket.data.networkProbes = new Map();
   socket.emit('games:list', games.list());
+
+  register(socket, 'network:probe', ({ nonce }) => {
+    socket.data.networkProbes.set(nonce, performance.now());
+    if (socket.data.networkProbes.size > 8) socket.data.networkProbes.delete(socket.data.networkProbes.keys().next().value);
+    socket.emit('network:probeAck', { nonce });
+    return responseOk();
+  });
+
+  register(socket, 'network:probeReturn', ({ nonce }) => {
+    const startedAt = socket.data.networkProbes.get(nonce);
+    socket.data.networkProbes.delete(nonce);
+    if (!Number.isFinite(startedAt)) return responseError('UNKNOWN_PROBE', 'Unknown or expired probe');
+    const room = rooms.getRoomBySocket(socket.id);
+    if (!room) return responseError('NOT_IN_ROOM', 'Not in a room');
+    const measured = Math.max(0, Math.min(150, performance.now() - startedAt));
+    const previous = room.latencyByPlayer.get(socket.id);
+    room.latencyByPlayer.set(socket.id, {
+      minRttMs: previous ? Math.min(previous.minRttMs, measured) : measured,
+      jitterMs: previous ? Math.min(150, Math.abs(measured - previous.lastRttMs)) : 0,
+      lastRttMs: measured,
+    });
+    return responseOk({ rttMs: measured });
+  });
 
   register(socket, 'room:create', ({ name }) => {
     const result = rooms.createRoom(socket, name.trim());
@@ -169,12 +193,13 @@ io.on('connection', (socket) => {
       response.gameId = room.currentGame.id;
       response.gameName = room.currentGame.name;
       if (room.currentGame.getReconnectState) {
-        response.gameState = room.currentGame.getReconnectState(room);
+        response.gameState = room.currentGame.getReconnectState(room, socket.id);
       }
     }
     socket.to(normalizedCode).emit('room:playerRejoined', {
       players: rooms.serializePlayers(room), playerName: room.players.get(socket.id)?.name,
     });
+    safelyNotifyPresence(room, result.playerId, true);
     return response;
   });
 
@@ -235,10 +260,8 @@ io.on('connection', (socket) => {
     const room = rooms.getRoomBySocket(socket.id);
     if (!room || room.state !== 'playing' || !room.currentGame) return responseError('INVALID_STATE', 'No active game');
     rooms.touch(room);
-    const authoritativeData = room.currentGame.id === 'type-racer' && event === 'finish'
-      ? { ...data, elapsed: undefined }
-      : data;
-    room.currentGame.onEvent(room, socket, event, authoritativeData, io);
+    const action = room.currentGame.onEvent(room, socket, event, data, io);
+    if (action?.ok === false) return responseError(action.code || 'ACTION_REJECTED', action.code || 'Action rejected');
     return responseOk({ roomEpoch: room.roomEpoch, gameInstanceId: room.gameInstanceId });
   });
 
@@ -260,6 +283,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const result = rooms.disconnectPlayer(socket.id, finalized => {
       if (!finalized.room) return;
+      safelyNotifyPresence(finalized.room, finalized.playerId, false);
       io.to(finalized.code).emit('room:playerLeft', { players: rooms.serializePlayers(finalized.room) });
       const humans = [...finalized.room.players.values()].filter(p => !p.isBot && !p.disconnected);
       if (finalized.room.state === 'playing' && humans.length < 1) {
@@ -275,6 +299,7 @@ io.on('connection', (socket) => {
       }
     });
     if (result?.gracePeriod) {
+      safelyNotifyPresence(result.room, result.room.players.get(socket.id)?.playerId, false);
       io.to(result.code).emit('room:playerAway', {
         players: rooms.serializePlayers(result.room), playerName: result.playerName,
       });
@@ -286,6 +311,15 @@ function disposeGame(room) {
   room.timerRegistry?.cancelGroup('game-start');
   bots.clearBotTimers(room);
   room.currentGame?.cleanup?.(room);
+}
+
+function safelyNotifyPresence(room, playerId, present) {
+  if (room?.state !== 'playing' || !room.currentGame?.onPresenceChanged) return;
+  try { room.currentGame.onPresenceChanged(room, io, playerId, present); }
+  catch (error) {
+    counters.internalErrors++;
+    console.error(JSON.stringify({ level: 'error', event: 'game.presence', error: error.message }));
+  }
 }
 rooms.configure({
   disposeRoom: room => disposeGame(room),

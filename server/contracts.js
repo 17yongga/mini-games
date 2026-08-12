@@ -61,6 +61,11 @@ function validateEmpty(value) {
   return value === undefined || value === null || (isPlainObject(value) && Object.keys(value).length === 0);
 }
 
+function validateNetworkProbe(value) {
+  return isPlainObject(value) && exactKeys(value, ['nonce']) &&
+    requiredString(value.nonce, 64, /^[A-Za-z0-9_-]{8,64}$/);
+}
+
 const contracts = {
   'room:create': validateCreate,
   'room:join': validateJoin,
@@ -69,6 +74,8 @@ const contracts = {
   'room:removeBot': validateRemoveBot,
   'room:startGame': validateStartGame,
   'game:event': validateGameEvent,
+  'network:probe': validateNetworkProbe,
+  'network:probeReturn': validateNetworkProbe,
   'room:backToLobby': validateEmpty,
 };
 

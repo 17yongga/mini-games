@@ -72,7 +72,8 @@ test('reaction-race uses monotonic receipt time with bounded compensation', () =
     gs.deadlineAt = 15000;
     room.latencyByPlayer = new Map([['p1', { minRttMs: 1000, jitterMs: 20 }]]);
     room.setNow(10200);
-    assert.equal(reaction.onEvent(room, makeSocket('p1'), 'tap', { roundId: gs.roundId, elapsed: 1 }, io).ok, true);
+    assert.equal(reaction.onEvent(room, makeSocket('p1'), 'tap', { roundId: gs.roundId }, io).ok, true);
+    assert.equal(reaction.onEvent(room, makeSocket('p2'), 'tap', { roundId: gs.roundId, elapsed: 1 }, io).code, 'INVALID_ACTION');
     const entry = gs.taps.get('p1');
     assert.equal(entry.rawTime, 200);
     assert.equal(entry.compensation, 75);

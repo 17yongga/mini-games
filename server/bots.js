@@ -155,12 +155,12 @@ function startReactionBot(room, io, botId, bot, sock) {
     // Reset flag on new round (phase === 'ready')
     if (gs.phase === 'ready') { acted = false; return; }
 
-    if (gs.phase === 'go' && !acted && !gs.tapped.has(botId)) {
+    if (gs.phase === 'go' && !acted && !gs.taps.has(botId)) {
       acted = true;
       const delay = diffRange(bot.difficulty, [400, 900], [220, 500], [130, 300]);
       const t = botTimeout(room, botId, () => {
-        if (room.gameState?.phase === 'go' && !room.gameState.tapped.has(botId)) {
-          room.currentGame.onEvent(room, sock, 'tap', {}, io);
+        if (room.gameState?.phase === 'go' && !room.gameState.taps.has(botId)) {
+          room.currentGame.onEvent(room, sock, 'tap', { roundId: room.gameState.roundId }, io);
         }
       }, delay);
       addTimer(room, t);
@@ -225,7 +225,7 @@ function startTapBot(room, io, botId, bot, sock) {
           tapLoop = null;
           return;
         }
-        room.currentGame.onEvent(room, sock, 'tap', {}, io);
+        room.currentGame.onEvent(room, sock, 'tap', { roundId: room.gameState.roundId }, io);
       }, interval);
       addTimer(room, tapLoop);
     }
@@ -381,7 +381,7 @@ function startMathBot(room, io, botId, bot, sock) {
         const delay = diffRange(bot.difficulty, [4000, 9000], [2000, 5000], [800, 2500]);
         const t = botTimeout(room, botId, () => {
           if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
-            room.currentGame.onEvent(room, sock, 'answer', { answer: String(problem.answer) }, io);
+            room.currentGame.onEvent(room, sock, 'answer', { answer: problem.answer }, io);
           }
         }, delay);
         addTimer(room, t);
@@ -391,12 +391,12 @@ function startMathBot(room, io, botId, bot, sock) {
         const t = botTimeout(room, botId, () => {
           if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
             const wrongAnswer = problem.answer + (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 10));
-            room.currentGame.onEvent(room, sock, 'answer', { answer: String(wrongAnswer) }, io);
+            room.currentGame.onEvent(room, sock, 'answer', { answer: wrongAnswer }, io);
             // Try again with correct answer sometimes
             if (diffChance(bot.difficulty, 0.2, 0.4, 0.6)) {
               const retry = botTimeout(room, botId, () => {
                 if (room.gameState?.phase === 'solving' && !room.gameState.answers.has(botId)) {
-                  room.currentGame.onEvent(room, sock, 'answer', { answer: String(problem.answer) }, io);
+                  room.currentGame.onEvent(room, sock, 'answer', { answer: problem.answer }, io);
                 }
               }, diffRange(bot.difficulty, [2000, 4000], [1000, 2500], [500, 1500]));
               addTimer(room, retry);

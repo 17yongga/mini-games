@@ -54,10 +54,10 @@ test('generic delayed action cannot cross a round boundary', async () => {
   bots.clearBotTimers(room);
 });
 
-test('Type Racer ignores every client elapsed value at the shared server boundary', () => {
+test('Type Racer rejects every client elapsed value at the game boundary', () => {
   const sentence = 'The quick brown fox';
   const values = [1, -1, NaN, Infinity, 600000, '1'];
-  const scores = [];
+
   const originalNow = Date.now;
   try {
     Date.now = () => 105000;
@@ -69,23 +69,21 @@ test('Type Racer ignores every client elapsed value at the shared server boundar
           ['p2', { name: 'Bob', score: 0, isBot: false, disconnected: true }],
         ]),
         gameState: {
-          round: 1, totalRounds: 1, phase: 'typing', sentences: [sentence],
-          progress: new Map(), finishers: [], roundStart: 100000,
+          round: 1, roundId: 7, totalRounds: 1, phase: 'typing', sentences: [sentence],
+          progress: new Map(), finishers: [], phaseStartedAt: 100000, deadlineAt: 130000,
         },
         _trTimers: [],
       };
       const events = [];
       const socket = { id: 'p1', emit: (event, data) => events.push({ event, data }) };
       const io = { to: () => ({ emit() {} }) };
-      typeRacer.onEvent(room, socket, 'finish', { typed: sentence, elapsed }, io);
-      const result = events.find(item => item.data.phase === 'finished-round').data;
-      scores.push({ score: room.players.get('p1').score, wpm: result.wpm });
+      const result = typeRacer.onEvent(room, socket, 'finish', { typed: sentence, elapsed, roundId: 7 }, io);
+      assert.equal(result.code, 'INVALID_PAYLOAD');
+      assert.equal(events.length, 0);
+      assert.equal(room.players.get('p1').score, 0);
       typeRacer.cleanup(room);
     }
   } finally {
     Date.now = originalNow;
   }
-  assert.deepEqual(new Set(scores.map(item => item.score)).size, 1);
-  assert.deepEqual(new Set(scores.map(item => item.wpm)).size, 1);
-  assert.ok(scores[0].wpm <= 240);
 });

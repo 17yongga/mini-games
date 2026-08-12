@@ -89,6 +89,7 @@ function createRoom(hostSocket, hostName) {
     lastActivityAt: Date.now(),
     roomEpoch: 1,
     gameInstanceId: null,
+    latencyByPlayer: new Map(),
   };
   room.timerRegistry = new TimerRegistry(
     () => roomStore.get(code) === room,
@@ -220,6 +221,7 @@ function rejoinRoom(socket, code, playerId, reconnectToken) {
   room.players.set(socket.id, player);
   if (room.host === oldId) room.host = socket.id;
   if (room.gameState) migrateIdentity(room.gameState, oldId, socket.id);
+  migrateIdentity(room.latencyByPlayer, oldId, socket.id);
   attachSocket(socket, room, socket.id);
   touch(room);
   return { room, rejoined: true, playerId, reconnectToken: nextToken };
@@ -268,7 +270,7 @@ function finalizeLeave(socketId, code) {
     destroyRoom(room, 'no-humans');
     return { code, closed: true, reason: 'no-humans' };
   }
-  return { code, room, playerName: player.name };
+  return { code, room, playerName: player.name, playerId: player.playerId };
 }
 
 function leaveRoom(socketId) {

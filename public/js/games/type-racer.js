@@ -13,6 +13,7 @@ window.GameClients['type-racer'] = {
     this.sentence  = '';
     this.startTime = null;
     this.finished  = false;
+    this.roundId   = null;
     if (this._throttleTimer) clearTimeout(this._throttleTimer);
     if (this._rafId)         cancelAnimationFrame(this._rafId);
     this._throttleTimer = null;
@@ -56,7 +57,7 @@ window.GameClients['type-racer'] = {
           this._throttleTimer = setTimeout(() => {
             this._throttleTimer = null;
             if (!this.finished) {
-              socket.emit('game:event', { event: 'progress', data: { typed: input.value } });
+              socket.emit('game:event', { event: 'progress', data: { typed: input.value, roundId: this.roundId } });
             }
           }, 100);
         }
@@ -100,7 +101,7 @@ window.GameClients['type-racer'] = {
     if (input)  input.disabled = true;
     if (status) { status.className = 'game-status success'; status.textContent = '✅ Finished! Waiting for results...'; }
 
-    this.socket.emit('game:event', { event: 'finish', data: { typed, elapsed } });
+    this.socket.emit('game:event', { event: 'finish', data: { typed, roundId: this.roundId } });
   },
 
   // ─── timer bar ────────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ window.GameClients['type-racer'] = {
       }
 
       if (data.phase === 'typing') {
+        this.roundId = data.roundId;
         this.sentence  = data.sentence;
         this.finished  = false;
         this.startTime = Date.now();

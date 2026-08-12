@@ -171,7 +171,7 @@ module.exports = {
         totalRounds: gs.totalRounds,
         scrambled: gs.scrambled,
         wordLength: gs.words[gs.round - 1].length,
-        timeLimit: remaining,
+        timeLimit: remaining / 1000,
         solvers: gs.solvers
       };
     }

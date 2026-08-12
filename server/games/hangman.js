@@ -347,7 +347,7 @@ module.exports = {
         wrongCount: gs.wrongLetters.length,
         maxWrong: MAX_WRONG,
         hint: gs.hint,
-        timeLimit: Math.max(0, ROUND_TIME * 1000 - (Date.now() - gs.roundStart))
+        timeLimit: Math.max(0, ROUND_TIME - (Date.now() - gs.roundStart) / 1000)
       };
     }
     if (gs.phase === 'reveal') {

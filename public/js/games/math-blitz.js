@@ -45,7 +45,8 @@ window.GameClients['math-blitz'] = {
     const submit = () => {
       const val = this.answerEl.value.trim();
       if (val === '') return;
-      socket.emit('game:event', { event: 'answer', data: { answer: val } });
+      if (!/^-?\d+$/.test(val)) return;
+      socket.emit('game:event', { event: 'answer', data: { answer: Number(val) } });
       this.submitBtn.disabled = true;
     };
 

@@ -1,7 +1,7 @@
 'use strict';
 // Reaction Race — receipt-authoritative timing with bounded trusted latency compensation.
 const { now, rng, plainObject, beforeDeadline, beginDeadline, remainingMs, scores, migrateIdentity, activePlayerIds } = require('./_shared');
-const READY_MIN_MS = 1500, READY_SPREAD_MS = 3500, GO_MS = 5000, COLLECT_MS = 120, RESULT_MS = 3000;
+const READY_MIN_MS = 1500, READY_SPREAD_MS = 3500, GO_MS = 5000, COLLECT_MS = 200, RESULT_MS = 3000;
 const COMPENSATION_CAP_MS = 75, TIE_FLOOR_MS = 20, FALSE_START_PENALTY = 25;
 
 function trustedLatency(room, id) {
@@ -27,8 +27,8 @@ module.exports = {
     this._timer(room, () => { if (gs.roundId !== token || gs.phase !== 'ready') return; gs.phase = 'go'; gs.goTime = now(room); gs.deadlineAt = gs.goTime + GO_MS; io.to(room.code).emit('game:state', { phase: 'go', roundId: token }); this._timer(room, () => { if (gs.roundId === token && gs.phase === 'go') this._roundResult(room, io); }, GO_MS); }, remainingMs(room, gs));
   },
   onEvent(room, socket, event, data, io) {
-    const gs = room.gameState; if (!gs || event !== 'tap' || (data !== undefined && !plainObject(data))) return { ok: false, code: 'INVALID_ACTION' };
-    if (plainObject(data) && data.roundId !== undefined && data.roundId !== gs.roundId) return { ok: false, code: 'STALE_ROUND' };
+    const gs = room.gameState; if (!gs || event !== 'tap' || !plainObject(data) || Object.keys(data).length !== 1 || !Number.isSafeInteger(data.roundId)) return { ok: false, code: 'INVALID_ACTION' };
+    if (data.roundId !== gs.roundId) return { ok: false, code: 'STALE_ROUND' };
     const player = room.players.get(socket.id); if (!player || player.disconnected) return { ok: false, code: 'INELIGIBLE' };
     if (gs.phase === 'ready') { if (!gs.falseStarts.has(socket.id)) { gs.falseStarts.add(socket.id); player.score = Math.max(0, (player.score || 0) - FALSE_START_PENALTY); } socket.emit('game:state', { phase: 'early', disqualified: true, penalty: FALSE_START_PENALTY, roundId: gs.roundId }); return { ok: false, code: 'FALSE_START' }; }
     if (gs.phase !== 'go' || !beforeDeadline(room, gs)) return { ok: false, code: 'NOT_OPEN' };
