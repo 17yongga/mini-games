@@ -457,14 +457,31 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
       // delay = ms before bot finishes typing
       const delay = diffRange(bot.difficulty, [18000, 25000], [10000, 17000], [3000, 9000]);
 
+      const accuracy = bot.difficulty === 'easy' ? 0.9 : bot.difficulty === 'medium' ? 0.96 : 0.985;
+      let draft = '';
+      for (const char of sentence) {
+        if (char !== ' ' && Math.random() > accuracy) {
+          draft += String.fromCharCode(97 + Math.floor(Math.random() * 26));
+        } else {
+          draft += char;
+        }
+      }
+      const context = captureContext(room);
+      const progressTimer = setTimeout(() => {
+        if (!contextMatches(room, context)) return;
+        room.currentGame.onEvent(room, sock, 'progress', { typed: draft }, io);
+      }, Math.max(250, delay * 0.75));
+      addTimer(room, progressTimer);
+
       const t = setTimeout(() => {
+        if (!contextMatches(room, context)) return;
         if (room.gameState?.phase !== 'typing' || room.gameState.round !== lastRound) return;
         if (gs.finishers && gs.finishers.some(f => f.id === botId)) return;
 
-        // Bots always type correctly — difficulty affects speed, not accuracy
+        // The draft models realistic mistakes; the final corrected sentence is still
+        // scored from the server's round clock, never from a bot-provided elapsed time.
         room.currentGame.onEvent(room, sock, 'finish', {
           typed: sentence,
-          elapsed: Math.round(delay),
         }, io);
       }, delay);
       addTimer(room, t);
@@ -475,6 +492,9 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
 
 // ─── Generic Bot for getBotMove() pattern ───
 function startGenericBot(room, io, botId, bot, sock) {
+  let pending = null;
+  let pendingKey = null;
+  let completedKey = null;
   const poll = setInterval(() => {
     const gs = room.gameState;
     if (!gs || gs.phase === 'finished') { clearInterval(poll); return; }
@@ -482,22 +502,57 @@ function startGenericBot(room, io, botId, bot, sock) {
     const game = room.currentGame;
     if (!game || !game.getBotMove) return;
     
+    const actionKey = `${room.gameInstanceId || ''}:${gs.round ?? ''}:${gs.phase ?? ''}`;
+    if (completedKey === actionKey) return;
+    if (pending && pendingKey === actionKey) return;
+    if (pending && pendingKey !== actionKey) {
+      clearTimeout(pending);
+      pending = null;
+      pendingKey = null;
+    }
+
     const move = game.getBotMove(room, { ...bot, id: botId });
     if (!move) return;
-    
-    if (move.delayMs) {
-      const t = setTimeout(() => {
-        // Double-check game state hasn't changed
-        const currentGs = room.gameState;
-        if (!currentGs || currentGs.phase === 'finished') return;
+    const context = captureContext(room);
+
+    if (move.delayMs > 0) {
+      pendingKey = actionKey;
+      pending = setTimeout(() => {
+        pending = null;
+        pendingKey = null;
+        if (!contextMatches(room, context)) return;
+        completedKey = actionKey;
         game.onEvent(room, sock, move.event, move.data, io);
       }, move.delayMs);
-      addTimer(room, t);
+      addTimer(room, pending);
     } else {
-      game.onEvent(room, sock, move.event, move.data, io);
+      if (contextMatches(room, context)) {
+        completedKey = actionKey;
+        game.onEvent(room, sock, move.event, move.data, io);
+      }
     }
   }, 2000);
   addTimer(room, poll);
+}
+
+function captureContext(room) {
+  return {
+    game: room.currentGame,
+    gameInstanceId: room.gameInstanceId,
+    roomEpoch: room.roomEpoch,
+    gameState: room.gameState,
+    round: room.gameState?.round,
+    phase: room.gameState?.phase,
+  };
+}
+
+function contextMatches(room, context) {
+  return room.currentGame === context.game &&
+    room.gameInstanceId === context.gameInstanceId &&
+    room.roomEpoch === context.roomEpoch &&
+    room.gameState === context.gameState &&
+    room.gameState?.round === context.round &&
+    room.gameState?.phase === context.phase;
 }
 
 function clearBotTimers(room) {
@@ -510,4 +565,10 @@ function clearBotTimers(room) {
   }
 }
 
-module.exports = { createBot, removeBot, removeBots, getBotIds, scheduleBotActions, clearBotTimers, fakeSocket, DIFF_EMOJI };
+module.exports = {
+  createBot, removeBot, removeBots, getBotIds, scheduleBotActions, clearBotTimers,
+  fakeSocket, DIFF_EMOJI,
+  _startGenericBot: startGenericBot,
+  _captureContext: captureContext,
+  _contextMatches: contextMatches,
+};

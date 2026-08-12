@@ -5,6 +5,7 @@
 const ROUND_TIME = 30000; // 30 seconds per round
 const ROUNDS = 5;
 const RESULT_DELAY = 3500;
+const MAX_WPM = 240;
 
 const SENTENCE_POOL = [
   'The quick brown fox jumps over the lazy dog',
@@ -38,7 +39,8 @@ function calcScore(sentence, typed, elapsedMs) {
   if (!typed || typed.length === 0) return { wpm: 0, accuracy: 0, score: 0 };
 
   // WPM: standard word = 5 chars
-  const wpm = Math.round((sentence.length / 5) / (elapsedMs / 60000));
+  const safeElapsedMs = Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : ROUND_TIME;
+  const wpm = Math.min(MAX_WPM, Math.round((sentence.length / 5) / (safeElapsedMs / 60000)));
 
   // Accuracy: compare char by char up to typed length
   const compareLen = Math.min(typed.length, sentence.length);
@@ -157,9 +159,9 @@ module.exports = {
       if (gs.finishers.some(f => f.id === socket.id)) return;
 
       if (!data || typeof data.typed !== 'string') return;
-      const elapsed = typeof data.elapsed === 'number' && data.elapsed > 0
-        ? data.elapsed
-        : Date.now() - gs.roundStart;
+      // Client elapsed is presentation data only. Receipt time against the
+      // server-owned round start is the scoring authority.
+      const elapsed = Math.max(1, Date.now() - gs.roundStart);
 
       const player = room.players.get(socket.id);
       if (!player) return;
