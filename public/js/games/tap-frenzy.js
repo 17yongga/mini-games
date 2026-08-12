@@ -44,11 +44,11 @@ window.GameClients['tap-frenzy'] = {
     const c = this.container;
     c.innerHTML = `
       <div class="game-status info" id="tf-timer">${(duration / 1000).toFixed(0)}s left</div>
-      <div class="tap-zone" id="tf-zone">${this.myTaps}</div>
+      <button type="button" class="tap-zone" id="tf-zone" aria-label="Tap target">${this.myTaps}</button>
       <div class="tap-leaderboard" id="tf-board"></div>
     `;
 
-    const zone = document.getElementById('tf-zone');
+    const zone = this.container.querySelector('#tf-zone');
 
     // BUG FIX: use single handler that works for both touch and mouse
     // touchstart fires first on mobile; we use it and prevent the follow-up click
@@ -72,42 +72,41 @@ window.GameClients['tap-frenzy'] = {
     });
 
     // Timer countdown
-    const timerEl = document.getElementById('tf-timer');
+    const timerEl = this.container.querySelector('#tf-timer');
     const start = Date.now();
-    const interval = setInterval(() => {
+    this.countdownInterval = setInterval(() => {
       const left = Math.max(0, duration - (Date.now() - start));
       timerEl.textContent = `${(left / 1000).toFixed(1)}s left`;
-      if (left <= 0) clearInterval(interval);
+      if (left <= 0) { clearInterval(this.countdownInterval); this.countdownInterval = null; }
     }, 100);
   },
 
   onTick(data) {
-    const board = document.getElementById('tf-board');
+    const board = this.container?.querySelector('#tf-board');
     if (!board || !data.counts) return;
     const max = Math.max(1, ...data.counts.map(c => c.count));
-    board.innerHTML = data.counts.map(c => `
-      <div class="tap-row">
-        <span style="width:70px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
-        <div class="tap-bar">
-          <div class="tap-bar-fill" style="width:${(c.count / max) * 100}%"></div>
-          <span class="tap-bar-count">${c.count}</span>
-        </div>
-      </div>
-    `).join('');
+    board.replaceChildren(...data.counts.map(entry => {
+      const row = document.createElement('div'); row.className = 'tap-row';
+      const name = document.createElement('span'); name.className = 'tap-player-name'; name.textContent = entry.name;
+      const bar = document.createElement('div'); bar.className = 'tap-bar';
+      const fill = document.createElement('div'); fill.className = 'tap-bar-fill'; fill.style.width = `${Math.max(0, Math.min(100, (entry.count / max) * 100))}%`;
+      const count = document.createElement('span'); count.className = 'tap-bar-count'; count.textContent = entry.count;
+      bar.append(fill, count); row.append(name, bar); return row;
+    }));
   },
 
   _showResults(results) {
     const c = this.container;
     c.innerHTML = '<div class="game-status success">Time\'s up!</div>';
-    let html = '<div style="width:100%;margin-top:16px">';
+    const list = document.createElement('div'); list.className = 'tap-results';
     results.forEach((r, i) => {
       const medal = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`;
-      html += `<div class="solver-item fade-in" style="animation-delay:${i * 0.1}s">
-        <span>${medal} ${r.name} — ${r.count} taps</span>
-        <span>+${r.points}</span>
-      </div>`;
+      const item = document.createElement('div'); item.className = 'solver-item fade-in'; item.style.animationDelay = `${i * 0.1}s`;
+      const label = document.createElement('span'); label.textContent = `${medal} ${r.name} — ${r.count} taps`;
+      const points = document.createElement('span'); points.textContent = `+${r.points}`;
+      item.append(label, points); list.append(item);
     });
-    html += '</div>';
-    c.insertAdjacentHTML('beforeend', html);
-  }
+    c.append(list);
+  },
+  destroy() { if (this.countdownInterval) clearInterval(this.countdownInterval); this.countdownInterval = null; this.container = null; this.socket = null; }
 };

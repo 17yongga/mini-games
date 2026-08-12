@@ -2,89 +2,86 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>Mini Games — Play with Friends</title>
-  <link rel="stylesheet" href="/play/css/style.css?v=7">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171612">
+  <title>Arcade Field Guide — Play together</title>
+  <link rel="stylesheet" href="./css/style.css?v=11">
+  <link rel="stylesheet" href="./css/tutorial.css?v=11">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23d94b2b'/><path d='M24 28h52v44H24z' fill='%23f4e8ca'/><path d='M35 50h30M50 35v30' stroke='%23171612' stroke-width='8'/></svg>">
 </head>
 <body>
-  <div id="app">
-    <!-- HOME SCREEN -->
-    <div id="screen-home" class="screen active">
-      <div class="home-hero">
-        <div class="logo">🎮</div>
-        <h1>Mini Games</h1>
-        <p class="subtitle">Quick games with friends — no login needed</p>
+  <a class="skip-link" href="#main-content">Skip to game</a>
+  <div id="connection-status" class="connection-status" role="status" aria-live="polite">Online</div>
+  <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <main id="main-content">
+    <section id="screen-home" class="screen active" aria-labelledby="home-title">
+      <div class="home-layout">
+        <header class="home-hero">
+          <div class="edition-mark" aria-hidden="true"><span>AFG</span><b>EST. 2026</b></div>
+          <p class="eyebrow">A pocket tournament for friends</p>
+          <h1 id="home-title">Arcade<br><em>Field Guide</em></h1>
+          <p class="subtitle">Thirteen quick contests. One room code. No account, downloads, or rulebook archaeology.</p>
+          <div class="field-notes" aria-label="Features"><span>2–8 players</span><span>13 games</span><span>Instant rooms</span></div>
+        </header>
+        <form class="home-actions paper-panel" id="home-form">
+          <div class="panel-number" aria-hidden="true">01</div>
+          <h2>Open a game table</h2>
+          <label for="player-name">Your field name</label>
+          <input type="text" id="player-name" placeholder="e.g. Quick Fox" maxlength="20" autocomplete="nickname" required>
+          <button id="btn-create" type="button" class="btn btn-primary">Create a room <span aria-hidden="true">↗</span></button>
+          <div class="divider"><span>or join an expedition</span></div>
+          <label for="join-code">Four-letter room code</label>
+          <div class="join-row">
+            <input type="text" id="join-code" placeholder="ABCD" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <button id="btn-join" type="button" class="btn btn-secondary">Join</button>
+          </div>
+          <p id="home-error" class="error-msg" role="alert"></p>
+        </form>
       </div>
-      <div class="home-actions">
-        <input type="text" id="player-name" placeholder="Your name" maxlength="20" autocomplete="off">
-        <button id="btn-create" class="btn btn-primary">Create Room</button>
-        <div class="divider"><span>or</span></div>
-        <div class="join-row">
-          <input type="text" id="join-code" placeholder="Room code" maxlength="4" autocomplete="off" style="text-transform:uppercase">
-          <button id="btn-join" class="btn btn-secondary">Join</button>
-        </div>
-      </div>
-      <div id="home-error" class="error-msg"></div>
-    </div>
+    </section>
 
-    <!-- LOBBY SCREEN -->
-    <div id="screen-lobby" class="screen">
-      <div class="lobby-header">
-        <h2>Room <span id="room-code" class="code-badge"></span></h2>
-        <button id="btn-share" class="btn btn-small">📋 Copy Link</button>
+    <section id="screen-lobby" class="screen" aria-labelledby="lobby-title" hidden>
+      <header class="lobby-header">
+        <div><p class="eyebrow">Field station</p><h2 id="lobby-title">Room <span id="room-code" class="code-badge"></span></h2></div>
+        <button id="btn-share" class="btn btn-small">Copy invitation</button>
+      </header>
+      <div class="lobby-layout">
+        <aside class="players-section paper-panel" aria-labelledby="players-title">
+          <div class="players-header"><h3 id="players-title">The party</h3><button id="btn-add-bot" class="btn btn-small btn-bot" hidden>Add bot</button></div>
+          <ul id="player-list" aria-live="polite"></ul>
+        </aside>
+        <section id="game-picker" class="game-picker" aria-labelledby="picker-title">
+          <div class="section-heading"><div><p class="eyebrow">Pick your trial</p><h3 id="picker-title">Game index</h3></div><span id="game-count"></span></div>
+          <div id="game-grid" class="game-grid" role="radiogroup" aria-label="Available games"></div>
+          <div class="lobby-action-tray"><p id="lobby-waiting" class="waiting-text" role="status">Waiting for the host to choose a game…</p><button id="btn-start" class="btn btn-primary btn-large" hidden disabled>Start selected game</button></div>
+        </section>
       </div>
-      <div class="players-section">
-        <div class="players-header">
-          <h3>Players</h3>
-          <button id="btn-add-bot" class="btn btn-small btn-bot" style="display:none">🤖 Add Bot</button>
-        </div>
-        <ul id="player-list"></ul>
-      </div>
-      <div id="game-picker" class="game-picker">
-        <h3>Choose a Game</h3>
-        <div id="game-grid" class="game-grid"></div>
-      </div>
-      <button id="btn-start" class="btn btn-primary btn-large" style="display:none">Start Game</button>
-      <p id="lobby-waiting" class="waiting-text">Waiting for host to start...</p>
-    </div>
+    </section>
 
-    <!-- GAME SCREEN -->
-    <div id="screen-game" class="screen">
-      <div class="game-hud">
-        <div id="game-title" class="game-title"></div>
-        <div id="game-round" class="game-round"></div>
-      </div>
-      <div id="game-container" class="game-container"></div>
-    </div>
+    <section id="screen-game" class="screen" aria-labelledby="game-title" hidden>
+      <header class="game-hud">
+        <div><p class="eyebrow">Now playing</p><h2 id="game-title" class="game-title" tabindex="-1"></h2></div>
+        <div class="game-hud-actions"><span id="game-round" class="game-round" role="status"></span><button id="btn-how-to" class="btn btn-small" aria-haspopup="dialog">How to play</button></div>
+      </header>
+      <div id="game-container" class="game-container" aria-live="polite"></div>
+    </section>
 
-    <!-- RESULTS SCREEN -->
-    <div id="screen-results" class="screen">
+    <section id="screen-results" class="screen" aria-labelledby="results-title" hidden>
       <div class="results-content">
-        <h2>🏆 Final Scores</h2>
-        <div id="results-podium" class="podium"></div>
-        <ol id="results-list" class="results-list"></ol>
-        <button id="btn-lobby" class="btn btn-primary" style="display:none">Back to Lobby</button>
-        <p id="results-waiting" class="waiting-text">Waiting for host...</p>
+        <p class="eyebrow">Field report complete</p><h2 id="results-title">Final scores</h2>
+        <div class="celebration" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div id="results-podium" class="podium"></div><ol id="results-list" class="results-list"></ol>
+        <button id="btn-lobby" class="btn btn-primary" hidden>Back to lobby</button><p id="results-waiting" class="waiting-text">Waiting for the host…</p>
       </div>
-    </div>
-  </div>
-
+    </section>
+  </main>
   <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
-  <link rel="stylesheet" href="/play/css/tutorial.css?v=1">
-  <script src="/play/js/tutorial.js?v=1"></script>
-  <script src="/play/js/main.js?v=9"></script>
-  <script src="/play/js/games/reaction-race.js?v=7"></script>
-  <script src="/play/js/games/trivia-blitz.js?v=7"></script>
-  <script src="/play/js/games/tap-frenzy.js?v=7"></script>
-  <script src="/play/js/games/word-scramble.js?v=7"></script>
-  <script src="/play/js/games/emoji-match.js?v=7"></script>
-  <script src="/play/js/games/simon-says.js?v=7"></script>
-  <script src="/play/js/games/math-blitz.js?v=7"></script>
-  <script src="/play/js/games/color-clash.js?v=7"></script>
-  <script src="/play/js/games/type-racer.js?v=9"></script>
+  <script src="./js/tutorial.js?v=11"></script>
+  <script src="./js/main.js?v=11"></script>
+  <script src="./js/games/reaction-race.js?v=11"></script><script src="./js/games/trivia-blitz.js?v=11"></script>
+  <script src="./js/games/tap-frenzy.js?v=11"></script><script src="./js/games/word-scramble.js?v=11"></script>
+  <script src="./js/games/emoji-match.js?v=11"></script><script src="./js/games/simon-says.js?v=11"></script>
+  <script src="./js/games/math-blitz.js?v=11"></script><script src="./js/games/color-clash.js?v=11"></script>
+  <script src="./js/games/type-racer.js?v=11"></script>
 </body>
 </html>
