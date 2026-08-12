@@ -1,4 +1,5 @@
 // Simon Says — memory sequence game
+const { plainObject, activePlayerIds, migrateIdentity } = require('./_shared');
 // A sequence of colors is shown. Players must reproduce it.
 // Sequence grows each round. Miss one and you're eliminated.
 
@@ -88,6 +89,8 @@ module.exports = {
     const inputStart = (sequence.length + 1) * FLASH_SPEED_MS + 500;
     const t = setTimeout(() => {
       gs.phase = 'input';
+      gs.inputStartedAt = Date.now();
+      gs.deadlineAt = gs.inputStartedAt + INPUT_TIMEOUT_MS;
       io.to(room.code).emit('game:state', {
         phase: 'input',
         round: gs.round,
@@ -108,8 +111,10 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'input' || gs.phase !== 'input') return;
-    if (gs.eliminated.has(socket.id)) return;
+    if (event !== 'input' || gs.phase !== 'input' || !plainObject(data)) return;
+    if (gs.eliminated.has(socket.id) || Date.now() > gs.deadlineAt) return;
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected || !gs.survivors.has(socket.id)) return;
 
     const color = data.color;
     if (!COLORS.includes(color)) return;
@@ -155,11 +160,8 @@ module.exports = {
 
     // Full sequence entered correctly
     if (playerInputs.length === expectedLength) {
-      const player = room.players.get(socket.id);
-      if (player) {
-        // Points: base per round, bonus for completing
-        player.score += gs.round * 20;
-      }
+      // Points: base per round, bonus for completing
+      player.score += gs.round * 20;
       socket.emit('game:state', {
         phase: 'roundComplete',
         message: 'Perfect! ✅'
@@ -176,6 +178,7 @@ module.exports = {
     // Check if all survivors have finished or been eliminated
     let allDone = true;
     for (const id of gs.survivors) {
+      if (room.players.get(id)?.disconnected) continue;
       const inputs = gs.inputs.get(id) || [];
       if (inputs.length < expectedLength) {
         allDone = false;
@@ -208,18 +211,20 @@ module.exports = {
     gs.survivors = new Set(
       Array.from(room.players.keys()).filter(id => !gs.eliminated.has(id))
     );
+    gs.resultState = null;
 
     const survivorNames = Array.from(gs.survivors)
       .map(id => room.players.get(id)?.name)
       .filter(Boolean);
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'result',
       round: gs.round,
       survivors: survivorNames,
       survivorCount: gs.survivors.size,
       eliminated: gs.eliminated.size
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     // Next round or end
     if (gs.survivors.size <= 1 || gs.round >= gs.totalRounds) {
@@ -255,11 +260,13 @@ module.exports = {
     const gs = room.gameState;
     if (!gs) return null;
     if (gs.phase === 'showing') {
-      const sequence = gs.fullSequence.slice(0, gs.round);
       return {
         phase: 'showing',
         round: gs.round,
-        sequence: sequence
+        totalRounds: gs.totalRounds,
+        sequenceLength: gs.round,
+        survivors: gs.survivors.size,
+        totalPlayers: room.players.size
       };
     }
     if (gs.phase === 'input') {
@@ -267,19 +274,17 @@ module.exports = {
       return {
         phase: 'input',
         round: gs.round,
-        sequence: sequence,
-        inputProgress: gs.inputProgress
+        sequenceLength: sequence.length,
+        timeLimit: Math.max(0, gs.deadlineAt - Date.now())
       };
     }
     if (gs.phase === 'result') {
-      return {
-        phase: 'result',
-        round: gs.round,
-        eliminatedThisRound: gs.eliminatedThisRound
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['inputs'], sets: ['eliminated', 'survivors'] }); },
 
   cleanup(room) {
     if (room._ssTimers) {

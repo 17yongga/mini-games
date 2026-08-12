@@ -1,4 +1,5 @@
 // Geography Quiz — 10 rounds of geography multiple-choice, speed bonus scoring
+const { plainObject, finiteInteger, migrateIdentity } = require('./_shared');
 
 const QUESTIONS = [
   { q: 'What is the capital of Australia?', options: ['Sydney', 'Melbourne', 'Canberra', 'Brisbane'], answer: 2 },
@@ -194,24 +195,23 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'answer' || gs.phase !== 'question') return;
+    if (event !== 'answer' || gs.phase !== 'question' || !plainObject(data)) return;
     if (gs.answers.has(socket.id)) return;
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
 
-    const choice = typeof data.choice === 'number' ? data.choice : -1;
-    if (choice < 0 || choice > 3) return;
+    const choice = data.choice;
+    if (!finiteInteger(choice, 0, 3) || Date.now() - gs.questionStart > TIMER_MS) return;
 
     const elapsed = Date.now() - gs.questionStart;
     gs.answers.set(socket.id, { choice, time: elapsed });
 
     // Notify others that this player answered
-    const player = room.players.get(socket.id);
-    if (player) {
-      io.to(room.code).emit('game:state', {
-        phase: 'player-answered',
-        playerId: socket.id,
-        playerName: player.name
-      });
-    }
+    io.to(room.code).emit('game:state', {
+      phase: 'player-answered',
+      playerId: socket.id,
+      playerName: player.name
+    });
 
     // Check if all active players answered
     let activePlayers = 0;
@@ -256,6 +256,7 @@ module.exports = {
       results.push({ id, name: player.name, correct, points, time: ans.time, choice: ans.choice });
     }
     results.sort((a, b) => b.points - a.points);
+    gs.results = results;
 
     // Build scoreboard
     const scores = [];
@@ -264,15 +265,18 @@ module.exports = {
     }
     scores.sort((a, b) => b.score - a.score);
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'answer',
       round: gs.round,
       totalRounds: gs.totalRounds,
+      question: q.q,
+      options: q.options,
       correctIndex: q.answer,
       correctText: q.options[q.answer],
       results,
       scores
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextQuestion(room, io), RESULTS_PAUSE_MS);
     this._addTimer(room, t);
@@ -324,35 +328,31 @@ module.exports = {
     return { event: 'answer', data: { choice } };
   },
 
-  getReconnectState(room) {
+  getReconnectState(room, playerId) {
     const gs = room.gameState;
     if (!gs) return null;
     if (gs.phase === 'question') {
       const q = gs.questions[gs.round - 1];
       const elapsed = Date.now() - gs.questionStart;
-      const remaining = Math.max(0, 20000 - elapsed);
+      const remaining = Math.max(0, TIMER_MS - elapsed);
       return {
         phase: 'question',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        question: q?.question,
+        question: q.q,
         options: q?.options,
         timeLimit: remaining
       };
     }
     if (gs.phase === 'answer') {
-      const q = gs.questions[gs.round - 1];
-      return {
-        phase: 'answer',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        question: q?.question,
-        options: q?.options,
-        correctIndex: q?.answer,
-        results: gs.results
-      };
+      return { ...gs.resultState };
     }
     return null;
+  },
+
+  migratePlayerIdentity(room, oldId, newId) {
+    migrateIdentity(room.gameState, oldId, newId, { maps: ['answers'] });
+    (room.gameState?.results || []).forEach(r => { if (r.id === oldId) r.id = newId; });
   },
 
   cleanup(room) {

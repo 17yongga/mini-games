@@ -1,4 +1,5 @@
 // Color Clash — Stroop Effect game
+const { plainObject, activePlayerIds, migrateIdentity } = require('./_shared');
 // A color WORD is shown in a DIFFERENT ink color. Players must tap the button
 // matching the INK COLOR (not the word). Gets faster each round.
 
@@ -106,17 +107,16 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'answer' || gs.phase !== 'showing') return;
+    if (event !== 'answer' || gs.phase !== 'showing' || !plainObject(data) || Date.now() - gs.questionStart > gs.timeLimit) return;
     if (gs.answers.has(socket.id)) return;
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
 
     const choice = data.choice;
     if (!gs.options.includes(choice)) return;
 
     const responseTime = Date.now() - gs.questionStart;
     gs.answers.set(socket.id, { choice, responseTime });
-
-    const player = room.players.get(socket.id);
-    if (!player) return;
 
     const correct = choice === gs.inkColor;
     if (correct) {
@@ -139,7 +139,7 @@ module.exports = {
 
     // Check if all players answered
     let allAnswered = true;
-    for (const [id] of room.players) {
+    for (const id of activePlayerIds(room)) {
       if (!gs.answers.has(id)) { allAnswered = false; break; }
     }
     if (allAnswered) {
@@ -164,14 +164,17 @@ module.exports = {
       }
     }
     results.sort((a, b) => (b.correct - a.correct) || (a.time - b.time));
+    gs.results = results.slice(0, 5);
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'result',
       round: gs.round,
+      totalRounds: gs.totalRounds,
       correctAnswer: gs.inkColor,
       word: gs.word,
-      results: results.slice(0, 5)
-    });
+      results: gs.results
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), 3000);
     this._addTimer(room, t);
@@ -195,11 +198,11 @@ module.exports = {
     const gs = room.gameState;
     if (!gs) return null;
     if (gs.phase === 'showing') {
-      const elapsed = Date.now() - gs.roundStart;
+      const elapsed = Date.now() - gs.questionStart;
       const timeLimit = gs.timeLimit;
       const remaining = Math.max(0, timeLimit - elapsed);
       return {
-        phase: 'showing',
+        phase: 'question',
         round: gs.round,
         totalRounds: gs.totalRounds,
         word: gs.word,
@@ -209,15 +212,12 @@ module.exports = {
       };
     }
     if (gs.phase === 'result') {
-      return {
-        phase: 'result',
-        round: gs.round,
-        totalRounds: gs.totalRounds,
-        results: gs.results
-      };
+      return { ...gs.resultState };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['answers', 'streaks'] }); },
 
   cleanup(room) {
     if (room._ccTimers) {

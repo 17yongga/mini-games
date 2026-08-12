@@ -1,4 +1,5 @@
 // Number Guess — multiplayer hot/cold number guessing
+const { now, plainObject, finiteInteger, migrateIdentity } = require('./_shared');
 // A secret number is picked each round. Players guess — server says higher/lower.
 // Hints are broadcast to all. First correct guess wins the round.
 // Scoring: 100 pts correct + 50 bonus for first + fewer guesses = more bonus pts.
@@ -65,6 +66,9 @@ module.exports = {
     gs.guessCounts = new Map();
     gs.solved = false;
     gs.solvers = [];
+    gs.roundStart = Date.now();
+    gs.deadlineAt = gs.roundStart + ROUND_TIME;
+    gs.rate = new Map();
 
     io.to(room.code).emit('game:state', {
       phase: 'guessing',
@@ -84,10 +88,10 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'guess' || gs.phase !== 'guessing') return;
+    if (event !== 'guess' || gs.phase !== 'guessing' || gs.solved || !plainObject(data) || Date.now() > gs.deadlineAt) return;
 
-    const guess = parseInt(data.guess, 10);
-    if (isNaN(guess)) return;
+    const guess = data.guess;
+    if (!finiteInteger(guess)) return;
     if (guess < gs.range.min || guess > gs.range.max) {
       socket.emit('game:state', {
         phase: 'invalid',
@@ -97,7 +101,9 @@ module.exports = {
     }
 
     const player = room.players.get(socket.id);
-    if (!player) return;
+    if (!player || player.disconnected) return;
+    const at = now(room), recent = (gs.rate.get(socket.id) || []).filter(t => at - t < 1000);
+    if (recent.length >= 6) return; recent.push(at); gs.rate.set(socket.id, recent);
 
     // Track guess count
     const prev = gs.guessCounts.get(socket.id) || 0;
@@ -105,6 +111,7 @@ module.exports = {
 
     let hint;
     if (guess === gs.secret) {
+      gs.solved = true;
       hint = 'correct';
       const guessCount = gs.guessCounts.get(socket.id);
       gs.solvers.push({ id: socket.id, name: player.name, guesses: guessCount });
@@ -141,6 +148,7 @@ module.exports = {
     } else {
       hint = guess < gs.secret ? 'higher' : 'lower';
       gs.guessLog.push({ playerName: player.name, guess, hint });
+      if (gs.guessLog.length > 50) gs.guessLog.shift();
 
       io.to(room.code).emit('game:state', {
         phase: 'guess-result',
@@ -193,7 +201,7 @@ module.exports = {
     if (!gs) return null;
     if (gs.phase === 'guessing') {
       const elapsed = Date.now() - gs.roundStart;
-      const remaining = Math.max(0, 60000 - elapsed);
+      const remaining = Math.max(0, ROUND_TIME - elapsed);
       return {
         phase: 'guessing',
         round: gs.round,
@@ -208,9 +216,10 @@ module.exports = {
         phase: 'result',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        correctNumber: gs.correctNumber,
-        winner: gs.winner,
-        reason: gs.reason
+        secret: gs.secret,
+        solvers: gs.solvers.map(s => ({ name: s.name, guesses: s.guesses })),
+        reason: gs.resultReason,
+        guessLog: gs.guessLog
       };
     }
     return null;
@@ -220,15 +229,18 @@ module.exports = {
     const gs = room.gameState;
     if (gs.phase === 'result') return;
     gs.phase = 'result';
+    gs.resultReason = reason;
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'result',
       round: gs.round,
+      totalRounds: gs.totalRounds,
       secret: gs.secret,
       reason,
       solvers: gs.solvers.map(s => ({ name: s.name, guesses: s.guesses })),
       guessLog: gs.guessLog
-    });
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), RESULT_DELAY);
     this._addTimer(room, t);
@@ -247,6 +259,8 @@ module.exports = {
     io.to(room.code).emit('game:end', { scores });
     room.state = 'results';
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['guessCounts', 'rate'], objectArrays: ['solvers'] }); },
 
   cleanup(room) {
     if (room._ngTimers) {

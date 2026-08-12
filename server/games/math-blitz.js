@@ -1,4 +1,5 @@
 // Math Blitz — speed math competition
+const { plainObject, finiteInteger, activePlayerIds, migrateIdentity } = require('./_shared');
 // Players race to solve arithmetic problems. Faster = more points.
 // Difficulty increases each round.
 
@@ -157,20 +158,19 @@ module.exports = {
 
   onEvent(room, socket, event, data, io) {
     const gs = room.gameState;
-    if (event !== 'answer' || gs.phase !== 'solving') return;
+    if (event !== 'answer' || gs.phase !== 'solving' || !plainObject(data) || Date.now() - gs.roundStart > ROUND_TIME) return;
     if (gs.answers.has(socket.id)) return; // already answered
+    const player = room.players.get(socket.id);
+    if (!player || player.disconnected) return;
 
-    const answer = parseInt(data.answer, 10);
-    if (isNaN(answer)) return;
+    const answer = data.answer;
+    if (!finiteInteger(answer)) return;
 
     const elapsed = Date.now() - gs.roundStart;
     const problem = gs.problems[gs.round - 1];
     const correct = answer === problem.answer;
 
     gs.answers.set(socket.id, { answer, time: elapsed, correct });
-
-    const player = room.players.get(socket.id);
-    if (!player) return;
 
     if (correct) {
       gs.solvers.push({ id: socket.id, name: player.name, time: elapsed });
@@ -201,10 +201,10 @@ module.exports = {
 
     // If all players answered, end round early
     const humanPlayers = Array.from(room.players.entries())
-      .filter(([, p]) => !p.isBot);
+      .filter(([, p]) => !p.isBot && !p.disconnected);
     const allHumansAnswered = humanPlayers.every(([id]) => gs.answers.has(id));
     const allBots = Array.from(room.players.entries())
-      .filter(([, p]) => p.isBot)
+      .filter(([, p]) => p.isBot && !p.disconnected)
       .every(([id]) => gs.answers.has(id));
 
     if (allHumansAnswered && allBots) {
@@ -221,15 +221,17 @@ module.exports = {
 
     const problem = gs.problems[gs.round - 1];
 
-    io.to(room.code).emit('game:state', {
+    gs.resultState = {
       phase: 'result',
       round: gs.round,
+      totalRounds: gs.totalRounds,
       answer: problem.answer,
       problem: problem.display,
       solvers: gs.solvers.map(s => ({ name: s.name, time: s.time })),
       totalAnswered: gs.answers.size,
-      totalPlayers: room.players.size
-    });
+      totalPlayers: activePlayerIds(room).length
+    };
+    io.to(room.code).emit('game:state', gs.resultState);
 
     const t = setTimeout(() => this._nextRound(room, io), 3500);
     this._addTimer(room, t);
@@ -254,12 +256,12 @@ module.exports = {
     if (gs.phase === 'solving') {
       const problem = gs.problems[gs.round - 1];
       const elapsed = Date.now() - gs.roundStart;
-      const remaining = Math.max(0, 15000 - elapsed);
+      const remaining = Math.max(0, ROUND_TIME - elapsed);
       return {
         phase: 'solving',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        problem: problem?.problem,
+        problem: problem.display,
         timeLimit: remaining,
         scores: Array.from(room.players.values()).map(p => ({ name: p.name, score: p.score }))
       };
@@ -269,11 +271,13 @@ module.exports = {
         phase: 'result',
         round: gs.round,
         totalRounds: gs.totalRounds,
-        results: gs.results
+        ...gs.resultState
       };
     }
     return null;
   },
+
+  migratePlayerIdentity(room, oldId, newId) { migrateIdentity(room.gameState, oldId, newId, { maps: ['answers'], objectArrays: ['solvers'] }); },
 
   cleanup(room) {
     if (room._mbTimers) {
