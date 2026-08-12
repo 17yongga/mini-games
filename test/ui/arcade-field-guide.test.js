@@ -1,0 +1,37 @@
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const root=path.resolve(__dirname,'../..'),pub=path.join(root,'public');
+const read=p=>fs.readFileSync(path.join(pub,p),'utf8');
+const html=read('index.html'),main=read('js/main.js'),tutorial=read('js/tutorial.js'),css=read('css/style.css');
+assert(!html.includes('user-scalable=no'),'zoom must remain available');
+assert(html.includes('viewport-fit=cover'),'safe-area viewport contract');
+assert(html.includes('./css/style.css')&&html.includes('./js/main.js'),'root-relative asset portability');
+assert(!html.includes('/play/css')&&!html.includes('/play/js'),'no legacy-only absolute assets');
+assert(main.includes("io(window.location.origin"),'socket must use same origin');
+assert(main.includes('reconnectToken')&&main.includes('playerId')&&main.includes('clientInstanceId'),'secure reconnect fields required');
+const sessionBody=main.slice(main.indexOf("sessionStorage.setItem('mg-session'"),main.indexOf('function getSession'));
+assert(!sessionBody.includes('isHost'),'host authority must not be persisted');
+assert(main.includes('gameSnapshot||res.snapshot'),'rejoin snapshot must survive dynamic load');
+assert(main.includes('hasConnected&&connectionWasLost'),'recovery badge must require a real prior disconnect');
+assert(main.includes('function selectGame(')&&main.includes("'Home','End'"),'radio selection must support pointer and keyboard navigation');
+assert(main.includes('destroyCurrentGame')&&main.includes("client?.destroy?.()"),'lifecycle owner required');
+function assertPlayerNamesAvoidHtmlSinks(source,label){
+  const htmlWrites=[...source.matchAll(/\.innerHTML\s*=\s*([\s\S]*?);/g)].map(match=>match[1]);
+  htmlWrites.forEach(write=>assert(!/\.name\b/.test(write),`${label} must not interpolate player names into innerHTML: ${write}`));
+  assert(!/insertAdjacentHTML\s*\([\s\S]*?\.name\b/.test(source),`${label} must not pass player names to insertAdjacentHTML`);
+}
+assertPlayerNamesAvoidHtmlSinks(main,'main');
+assert(/\bname\.textContent\s*=\s*p\.name\b/.test(main),'player list names must use textContent');
+assert(/appendResult\([^;]*s\.name\b/.test(main)&&/createTextNode\(\s*`?\s*\$?\{?s\.name/.test(main),'main results names must use text-only DOM sinks');
+const tap=read('js/games/tap-frenzy.js');
+assertPlayerNamesAvoidHtmlSinks(tap,'tap frenzy');
+assert(/\bname\.textContent\s*=\s*entry\.name\b/.test(tap),'tap live names must use textContent');
+assert(/\blabel\.textContent\s*=\s*`[^`]*\$\{r\.name\}/.test(tap),'tap result names must use textContent');
+assert(tutorial.includes('window.GameRules=RULES'),'shared rules registry required');
+const ids=[...tutorial.matchAll(/^'([a-z-]+)':\[/gm)].map(m=>m[1]);
+assert.strictEqual(new Set(ids).size,13,'rules required for all 13 games');
+assert(css.includes('prefers-reduced-motion:reduce'),'reduced-motion equivalence required');
+assert(css.includes(':focus-visible'),'visible focus required');
+assert(css.includes('env(safe-area-inset-bottom)'),'safe areas required');
+assert(!/--(?:primary|accent|bg|surface):\s*#[0-9a-f]*(?:6c63ff|2563eb)/i.test(css),'platform palette must not use legacy purple/blue');
+for(const file of ['js/main.js','js/tutorial.js',...fs.readdirSync(path.join(pub,'js/games')).map(f=>'js/games/'+f)])new vm.Script(read(file),{filename:file});
+console.log(`UI contract checks passed: ${new Set(ids).size} game guides, ${fs.readdirSync(path.join(pub,'js/games')).length} game clients parsed.`);

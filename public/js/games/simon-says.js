@@ -7,19 +7,20 @@ window.GameClients['simon-says'] = {
     container.innerHTML = `
       <div class="game-status info" id="ss-status">Watch the pattern...</div>
       <div class="simon-board" id="ss-board">
-        <div class="simon-pad red" data-color="red"></div>
-        <div class="simon-pad blue" data-color="blue"></div>
-        <div class="simon-pad green" data-color="green"></div>
-        <div class="simon-pad yellow" data-color="yellow"></div>
+        <button type="button" aria-label="Red" class="simon-pad red" data-color="red"></button>
+        <button type="button" aria-label="Blue" class="simon-pad blue" data-color="blue"></button>
+        <button type="button" aria-label="Green" class="simon-pad green" data-color="green"></button>
+        <button type="button" aria-label="Yellow" class="simon-pad yellow" data-color="yellow"></button>
       </div>
       <div class="simon-progress" id="ss-progress"></div>
       <div class="simon-info" id="ss-info"></div>
     `;
 
-    this.board = document.getElementById('ss-board');
-    this.status = document.getElementById('ss-status');
-    this.progress = document.getElementById('ss-progress');
-    this.info = document.getElementById('ss-info');
+    this.board = container.querySelector('#ss-board');
+    this.status = container.querySelector('#ss-status');
+    this.progress = container.querySelector('#ss-progress');
+    this.info = container.querySelector('#ss-info');
+    this.status.setAttribute('role', 'status');
     this.pads = container.querySelectorAll('.simon-pad');
     this.inputEnabled = false;
 
@@ -105,5 +106,6 @@ window.GameClients['simon-says'] = {
     if (data.type === 'flash') {
       this._flashPad(data.color);
     }
-  }
+  },
+  destroy() { this.inputEnabled = false; this.container = null; this.socket = null; this.pads = []; }
 };

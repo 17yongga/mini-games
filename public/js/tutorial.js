@@ -1,203 +1,38 @@
-// Tutorial Engine — ghost round overlay before game starts
-(function() {
-  'use strict';
-
-  window.TutorialEngine = {
-    _timers: [],
-    _rafId: null,
-    _completed: false,
-    _onComplete: null,
-    _overlay: null,
-
-    run(container, gameClient, gameName, socket, state, players, onComplete) {
-      this._timers = [];
-      this._rafId = null;
-      this._completed = false;
-      this._onComplete = onComplete;
-      this._overlay = null;
-
-      // Ensure container is relatively positioned
-      if (getComputedStyle(container).position === 'static') {
-        container.style.position = 'relative';
-      }
-
-      // Create overlay
-      const overlay = document.createElement('div');
-      overlay.className = 'tutorial-overlay';
-      this._overlay = overlay;
-
-      // Progress bar
-      const pbWrap = document.createElement('div');
-      pbWrap.className = 'tutorial-progress-bar-wrap';
-      const pb = document.createElement('div');
-      pb.className = 'tutorial-progress-bar';
-      pb.id = 'tutorial-pb';
-      pbWrap.appendChild(pb);
-      overlay.appendChild(pbWrap);
-
-      // Game label
-      const label = document.createElement('div');
-      label.className = 'tutorial-game-label';
-      label.textContent = gameName + ' \u00b7 HOW TO PLAY';
-      overlay.appendChild(label);
-
-      // Step content area
-      const content = document.createElement('div');
-      content.className = 'tutorial-step-content';
-      overlay.appendChild(content);
-
-      // Caption
-      const caption = document.createElement('div');
-      caption.className = 'tutorial-caption';
-      overlay.appendChild(caption);
-
-      // Skip button
-      const skipBtn = document.createElement('div');
-      skipBtn.className = 'tutorial-skip-btn';
-      skipBtn.textContent = 'Tap to skip \u2192';
-      overlay.appendChild(skipBtn);
-
-      container.appendChild(overlay);
-
-      const self = this;
-
-      skipBtn.addEventListener('click', () => self.skip());
-      skipBtn.addEventListener('touchstart', (e) => { e.preventDefault(); self.skip(); }, { passive: false });
-
-      // Show skip after 1s
-      this._timers.push(setTimeout(() => {
-        skipBtn.classList.add('tutorial-skip-visible');
-      }, 1000));
-
-      if (!gameClient.tutorial) {
-        // Fallback: 3-2-1 countdown
-        this._runCountdown(content, onComplete);
-        return;
-      }
-
-      const { duration, steps } = gameClient.tutorial;
-
-      // Progress bar animation
-      const startTime = performance.now();
-      const animPb = (now) => {
-        const elapsed = now - startTime;
-        const pct = Math.max(0, 1 - elapsed / duration);
-        pb.style.width = (pct * 100) + '%';
-        if (pct > 0 && !this._completed) {
-          this._rafId = requestAnimationFrame(animPb);
-        }
-      };
-      this._rafId = requestAnimationFrame(animPb);
-
-      // Schedule steps
-      steps.forEach(step => {
-        const tid = setTimeout(() => {
-          this._runStep(step, content, caption);
-        }, step.at);
-        this._timers.push(tid);
-      });
-
-      // Auto-complete
-      this._timers.push(setTimeout(() => {
-        this._complete();
-      }, duration));
-    },
-
-    _runStep(step, content, caption) {
-      switch (step.type) {
-        case 'html':
-          content.innerHTML = step.content;
-          break;
-
-        case 'flash': {
-          const el = document.createElement('div');
-          el.className = 'tutorial-flash-text';
-          el.textContent = step.content;
-          content.innerHTML = '';
-          content.appendChild(el);
-          break;
-        }
-
-        case 'score': {
-          const pop = document.createElement('div');
-          pop.className = 'tutorial-score-pop';
-          let txt = '+' + step.points + ' pts  \ud83d\udc7b ' + step.player;
-          if (step.time) txt += '  \u00b7 ' + step.time;
-          pop.textContent = txt;
-          content.style.position = 'relative';
-          content.appendChild(pop);
-          setTimeout(() => { if (pop.parentNode) pop.remove(); }, 1300);
-          break;
-        }
-
-        case 'caption':
-          caption.textContent = step.content;
-          caption.style.animation = 'none';
-          void caption.offsetWidth; // reflow
-          caption.style.animation = '';
-          break;
-
-        case 'player-tag': {
-          const tag = document.createElement('div');
-          tag.style.cssText = 'display:inline-block;background:rgba(255,255,255,0.1);border-radius:999px;padding:4px 12px;font-size:0.78rem;margin-top:8px;';
-          tag.textContent = '\ud83d\udc7b ' + step.player;
-          content.appendChild(tag);
-          break;
-        }
-
-        case 'clear':
-          content.innerHTML = '';
-          break;
-      }
-    },
-
-    _runCountdown(content, onComplete) {
-      const steps = [
-        { at: 0,   text: '3' },
-        { at: 500, text: '2' },
-        { at: 1000, text: '1' },
-        { at: 1500, text: 'GO! \ud83d\ude80' }
-      ];
-      steps.forEach(s => {
-        const tid = setTimeout(() => {
-          content.innerHTML = '';
-          const el = document.createElement('div');
-          el.className = 'tutorial-countdown';
-          el.textContent = s.text;
-          content.appendChild(el);
-        }, s.at);
-        this._timers.push(tid);
-      });
-      this._timers.push(setTimeout(() => this._complete(), 1900));
-    },
-
-    _complete() {
-      if (this._completed) return;
-      this._completed = true;
-
-      // Cancel pending timers + RAF
-      this._timers.forEach(id => clearTimeout(id));
-      this._timers = [];
-      if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
-
-      // Animate out
-      if (this._overlay) {
-        this._overlay.classList.add('tutorial-exiting');
-        const cb = this._onComplete;
-        setTimeout(() => {
-          if (this._overlay && this._overlay.parentNode) {
-            this._overlay.remove();
-          }
-          this._overlay = null;
-          if (cb) cb();
-        }, 320);
-      } else {
-        if (this._onComplete) this._onComplete();
-      }
-    },
-
-    skip() {
-      this._complete();
-    }
-  };
+// Arcade Field Guide — accessible rules for every game.
+(function(){'use strict';
+const RULES={
+'reaction-race':['Wait while the signal is red.','Press the target only when it turns green.','The quickest valid reaction wins; an early press counts against you.'],
+'trivia-blitz':['Read the question and all choices.','Choose one answer before time runs out.','Correct answers score more when you answer quickly.'],
+'tap-frenzy':['Wait for the round to begin.','Press the large tap target as many times as you can.','Your total taps determine your score.'],
+'word-scramble':['Rearrange the shown letters into a word.','Type your answer and submit before the timer ends.','Solve quickly for the strongest score.'],
+'emoji-match':['Turn over two cards per turn.','Matching emoji stay revealed; misses turn back over.','Find more pairs than the other players.'],
+'simon-says':['Watch the complete colour sequence.','Repeat it in the same order using the four pads.','Each round adds another step; one mistake eliminates you.'],
+'math-blitz':['Solve the displayed arithmetic problem.','Enter one answer before time expires.','Speed breaks ties between correct answers.'],
+'color-clash':['Read the ink colour, not the colour word.','Choose the button naming the ink colour.','Build a streak with quick, correct choices.'],
+'type-racer':['Read the sentence exactly as shown.','Type it into the field; accuracy matters.','Finish accurately and quickly to earn the most points.'],
+'color-picker':['Use the red, green, and blue sliders to match the target swatch.','Submit your mix before time expires.','Closer colour matches earn more points.'],
+'hangman':['Guess one letter or the whole word on your turn.','Correct letters reveal every matching position.','Solve the word before the drawing is completed.'],
+'number-guess':['Enter a number inside the displayed range.','Use the higher or lower hint after each guess.','Find the secret number in the fewest attempts.'],
+'geography-quiz':['Read the geography question.','Choose one answer before the timer expires.','Correct, faster answers score more points.']
+};
+const META={
+'reaction-race':['Reaction Race','Patience first, reflexes second.','Tip: keep focus on the target, but do not anticipate the signal.'],
+'trivia-blitz':['Trivia Blitz','Choose carefully, then commit.','Tip: every player answers the same question independently.'],
+'tap-frenzy':['Tap Frenzy','A short, all-out test of speed.','Tip: keyboard users can use Space or Enter on the tap button.'],
+'word-scramble':['Word Scramble','Put a shuffled word back in order.','Tip: spelling must match the answer.'],
+'emoji-match':['Emoji Match','A shared memory board where pairs score.','Tip: remember misses—they are clues for your next turn.'],
+'simon-says':['Simon Says','Watch, remember, repeat.','Tip: wait until the sequence finishes before pressing a pad.'],
+'math-blitz':['Math Blitz','Fast arithmetic with accuracy first.','Tip: check the operator before submitting.'],
+'color-clash':['Color Clash','A Stroop test: trust the ink, not the word.','Tip: say the ink colour to yourself before choosing.'],
+'type-racer':['Type Racer','An accuracy race across one sentence.','Tip: correcting a typo is faster than submitting an inaccurate line.'],
+'color-picker':['Color Picker','Mix RGB light to match a target.','Tip: compare which channel needs to become lighter or darker.'],
+'hangman':['Hangman','Reveal the hidden word before guesses run out.','Tip: common vowels are useful early guesses.'],
+'number-guess':['Number Guess','Narrow a hidden range with each clue.','Tip: choose the midpoint to eliminate the most possibilities.'],
+'geography-quiz':['Geography Quiz','Places, capitals, flags, and landmarks.','Tip: answer only after reading every choice.']};
+let overlay=null,returnFocus=null,onComplete=null;
+function close(complete=true){if(!overlay)return;overlay.remove();overlay=null;document.removeEventListener('keydown',onKey);if(returnFocus?.isConnected)returnFocus.focus();const cb=onComplete;onComplete=null;if(complete&&cb)cb();}
+function onKey(e){if(e.key==='Escape')close();if(e.key==='Tab'&&overlay){const f=[...overlay.querySelectorAll('button')];if(!f.length)return;if(e.shiftKey&&document.activeElement===f[0]){e.preventDefault();f.at(-1).focus()}else if(!e.shiftKey&&document.activeElement===f.at(-1)){e.preventDefault();f[0].focus()}}}
+function show(container,id,complete){close(false);const m=META[id]||[id,'Learn the field before play begins.',''];returnFocus=document.activeElement;onComplete=complete||null;overlay=document.createElement('div');overlay.className='tutorial-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-labelledby','tutorial-title');const card=document.createElement('div');card.className='tutorial-card';const kicker=document.createElement('p');kicker.className='tutorial-kicker';kicker.textContent='Field guide · How to play';const title=document.createElement('h2');title.id='tutorial-title';title.textContent=m[0];const summary=document.createElement('p');summary.className='tutorial-summary';summary.textContent=m[1];const list=document.createElement('ol');list.className='tutorial-rules';(RULES[id]||['Follow the instructions shown during play.']).forEach(text=>{const li=document.createElement('li');li.textContent=text;list.append(li)});const tip=document.createElement('p');tip.className='tutorial-tip';tip.textContent=m[2];const actions=document.createElement('div');actions.className='tutorial-actions';const button=document.createElement('button');button.className='btn btn-primary tutorial-close';button.textContent=complete?'Ready — start game':'Back to game';button.addEventListener('click',()=>close());actions.append(button);card.append(kicker,title,summary,list,tip,actions);overlay.append(card);container.append(overlay);document.addEventListener('keydown',onKey);button.focus()}
+window.GameRules=RULES;
+window.TutorialEngine={run(container,client,gameName,socket,state,players,complete){show(container,state.currentGame,complete)},show(container,id){show(container,id,null)},skip(){close()},destroy(){close(false)}};
 })();
