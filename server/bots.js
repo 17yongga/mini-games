@@ -507,7 +507,7 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
       const context = captureContext(room, botId);
       const progressTimer = botTimeout(room, botId, () => {
         if (!contextMatches(room, context, botId)) return;
-        room.currentGame.onEvent(room, sock, 'progress', { typed: draft }, io);
+        room.currentGame.onEvent(room, sock, 'progress', { typed: draft, roundId: context.roundId }, io);
       }, Math.max(250, delay * 0.75));
       addTimer(room, progressTimer);
 
@@ -520,6 +520,7 @@ function startTypeRacerBot(room, io, botId, bot, sock) {
         // scored from the server's round clock, never from a bot-provided elapsed time.
         room.currentGame.onEvent(room, sock, 'finish', {
           typed: sentence,
+          roundId: context.roundId,
         }, io);
       }, delay);
       addTimer(room, t);
@@ -580,6 +581,7 @@ function captureContext(room, botId, includeAction = true) {
     roomEpoch: room.roomEpoch,
     gameState: room.gameState,
     round: room.gameState?.round,
+    roundId: room.gameState?.roundId,
     phase: room.gameState?.phase,
     includeAction,
     bot: botId === undefined ? undefined : room.players?.get(botId),

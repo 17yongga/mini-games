@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const { io: createClient } = require('socket.io-client');
 const rooms = require('../server/rooms');
 const runtime = require('../server/server');
@@ -10,6 +11,9 @@ const emoji = require('../server/games/emoji-match');
 const geography = require('../server/games/geography-quiz');
 const hangman = require('../server/games/hangman');
 const scramble = require('../server/games/word-scramble');
+const reaction = require('../server/games/reaction-race');
+const typeRacer = require('../server/games/type-racer');
+const bots = require('../server/bots');
 const { makeIo, makeRoom, cleanup } = require('./helpers/game-fixtures');
 
 const emitAck = (socket, event, payload) => new Promise(resolve => socket.emit(event, payload, resolve));
@@ -116,4 +120,48 @@ test('Geography, Hangman, and Word Scramble reconnect timeLimit uses live second
     room.gameState = { phase: 'scrambled', round: 1, totalRounds: 1, words: ['test'], scrambled: 'tset', solvers: [], roundStart: 100000 };
     assert.ok(scramble.getReconnectState(room, 'p1').timeLimit <= 15);
   } finally { Date.now = now; }
+});
+
+test('Type Racer bot progress and finish carry the authoritative round ID', async () => {
+  const room = makeRoom(), io = makeIo(), botId = 'bot-racer';
+  room.currentGame = typeRacer;
+  room.gameInstanceId = 'bot-race';
+  room.roomEpoch = 1;
+  room._botDelayScale = 0.0001;
+  room.players.set(botId, { id: botId, name: 'Bot', isBot: true, difficulty: 'hard', score: 0 });
+  typeRacer.init(room, io);
+  room.gameState.phase = 'typing';
+  const observed = [], original = typeRacer.onEvent;
+  typeRacer.onEvent = (_room, _socket, event, data) => { observed.push({ event, data }); return { ok: true }; };
+  try {
+    bots._startTypeRacerBot(room, io, botId, { difficulty: 'hard' }, bots.fakeSocket(botId));
+    await new Promise(resolve => setTimeout(resolve, 260));
+    assert.ok(observed.some(x => x.event === 'progress' && x.data.roundId === room.gameState.roundId));
+    assert.ok(observed.some(x => x.event === 'finish' && x.data.roundId === room.gameState.roundId));
+  } finally {
+    typeRacer.onEvent = original;
+    bots.clearBotTimers(room);
+    cleanup(typeRacer, room);
+  }
+});
+
+test('Reaction Race collection window covers maximum uncertainty-overlap arrivals', () => {
+  const source = fs.readFileSync(require.resolve('../server/games/reaction-race'), 'utf8');
+  const collectMs = Number(source.match(/COLLECT_MS = (\d+)/)?.[1]);
+  assert.ok(collectMs >= 275, `collection window ${collectMs}ms is below the 275ms fairness bound`);
+  assert.equal(reaction.id, 'reaction-race');
+});
+
+test('canonical root, root assets, health, and legacy play routes are served', async t => {
+  const server = http.createServer(runtime.app);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const [root, css, legacy, health] = await Promise.all([
+    fetch(`${base}/`), fetch(`${base}/css/style.css`), fetch(`${base}/play/`), fetch(`${base}/health`),
+  ]);
+  assert.equal(root.status, 200); assert.match(await root.text(), /Arcade Field Guide/);
+  assert.equal(css.status, 200); assert.match(css.headers.get('content-type') || '', /text\/css/);
+  assert.equal(legacy.status, 200); assert.equal(health.status, 200);
+  assert.equal((await health.json()).games, 13);
 });

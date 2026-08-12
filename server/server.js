@@ -35,10 +35,11 @@ const htmlNoCache = (res, filePath) => {
     res.setHeader('Expires', '0');
   }
 };
-app.use('/play', express.static(path.join(__dirname, '..', 'public'), { setHeaders: htmlNoCache }));
+const publicDir = path.join(__dirname, '..', 'public');
+app.use('/play', express.static(publicDir, { setHeaders: htmlNoCache }));
 app.get('/play', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(path.join(publicDir, 'index.html'));
 });
 app.get('/play/health', (req, res) => {
   const roomMetrics = rooms.getMetrics();
@@ -52,6 +53,12 @@ app.get('/play/health', (req, res) => {
     eventLoop,
   });
 });
+app.get('/health', (req, res) => res.redirect(307, '/play/health'));
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+app.use(express.static(publicDir, { setHeaders: htmlNoCache }));
 
 function responseError(code, message) {
   return { ok: false, code, error: message, message };

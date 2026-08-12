@@ -1,7 +1,8 @@
 'use strict';
 // Reaction Race — receipt-authoritative timing with bounded trusted latency compensation.
 const { now, rng, plainObject, beforeDeadline, beginDeadline, remainingMs, scores, migrateIdentity, activePlayerIds } = require('./_shared');
-const READY_MIN_MS = 1500, READY_SPREAD_MS = 3500, GO_MS = 5000, COLLECT_MS = 200, RESULT_MS = 3000;
+// Covers 2×100ms uncertainty plus up to 75ms relative compensation.
+const READY_MIN_MS = 1500, READY_SPREAD_MS = 3500, GO_MS = 5000, COLLECT_MS = 300, RESULT_MS = 3000;
 const COMPENSATION_CAP_MS = 75, TIE_FLOOR_MS = 20, FALSE_START_PENALTY = 25;
 
 function trustedLatency(room, id) {
