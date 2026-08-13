@@ -116,21 +116,6 @@ window.GameClients['geography-quiz'] = {
       summary.append(this._resultRow(`${r.correct ? '✅' : '❌'} ${r.name}`, `${r.correct ? '+' + r.points : '0'} pts`));
     });
 
-    // Scoreboard
-    if (data.scores && data.scores.length) {
-      const scoreboard = document.createElement('div');
-      scoreboard.style.cssText = 'margin-top:12px;border-top:1px solid #333;padding-top:8px';
-      const heading = document.createElement('div');
-      heading.style.cssText = 'font-size:12px;color:#888;margin-bottom:6px;text-align:center';
-      heading.textContent = 'SCOREBOARD';
-      scoreboard.append(heading);
-      data.scores.forEach((s, i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
-        scoreboard.append(this._resultRow(`${medal} ${s.name}`, `${s.score} pts`));
-      });
-      summary.append(scoreboard);
-    }
-
     this.container.append(summary);
   },
 

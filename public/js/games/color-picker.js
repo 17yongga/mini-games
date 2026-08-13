@@ -12,7 +12,7 @@ window.GameClients['color-picker'] = {
       <div class="game-status info">Get ready to mix colors! 🌈</div>
       <div id="cp-main"></div>
       <style>
-        .cp-wrap { padding: 10px 4px; max-width: 420px; margin: 0 auto; }
+        .cp-wrap { padding: 10px 4px; max-width: 420px; margin: 0 auto; min-width: 0; width: 100%; }
         .cp-round-label { text-align: center; font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
         .cp-swatches { display: flex; gap: 12px; margin-bottom: 12px; }
         .cp-swatch-box { flex: 1; text-align: center; }
@@ -44,12 +44,12 @@ window.GameClients['color-picker'] = {
         .cp-result-target-info { }
         .cp-result-target-title { font-weight: 700; font-size: 1rem; }
         .cp-result-target-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
-        .cp-result-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .cp-result-row { display: flex; align-items: center; gap: clamp(4px, 2vw, 9px); padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.07); min-width: 0; }
         .cp-result-rank { width: 18px; text-align: center; font-size: 0.78rem; color: var(--text-muted); flex-shrink: 0; }
         .cp-result-swatch { width: 30px; height: 30px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.18); flex-shrink: 0; }
-        .cp-result-name { flex: 1; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .cp-result-dist { font-size: 0.75rem; color: var(--text-muted); flex-shrink: 0; }
-        .cp-result-pts { font-weight: 700; color: var(--accent); font-size: 0.88rem; min-width: 44px; text-align: right; flex-shrink: 0; }
+        .cp-result-name { flex: 1 1 auto; min-width: 0; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cp-result-dist { font-size: 0.75rem; color: var(--text-muted); flex: 0 1 auto; }
+        .cp-result-pts { font-weight: 700; color: var(--accent); font-size: 0.88rem; min-width: 36px; text-align: right; flex-shrink: 0; }
         .cp-next-msg { text-align: center; margin-top: 12px; font-size: 0.78rem; color: var(--text-muted); }
         .cp-medal { font-size: 1rem; }
       </style>
