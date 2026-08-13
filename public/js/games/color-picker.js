@@ -27,12 +27,12 @@ window.GameClients['color-picker'] = {
         .cp-timer-bar { height: 5px; background: rgba(255,255,255,0.12); border-radius: 3px; margin-bottom: 14px; overflow: hidden; }
         .cp-timer-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff4444 0%, #ffaa00 50%, #44cc44 100%); border-radius: 3px; }
         .cp-sliders { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-        .cp-slider-row { display: flex; align-items: center; gap: 10px; }
+        .cp-slider-row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
         .cp-slider-lbl { font-weight: 800; font-size: 0.88rem; width: 16px; text-align: center; flex-shrink: 0; }
         .cp-slider-lbl.r { color: #ff5555; }
         .cp-slider-lbl.g { color: #44dd44; }
         .cp-slider-lbl.b { color: #5599ff; }
-        .cp-slider { flex: 1; cursor: pointer; accent-color: var(--accent); height: 4px; }
+        .cp-slider { flex: 1; cursor: pointer; accent-color: var(--accent); height: 44px; margin: 0; }
         .cp-slider:disabled { opacity: 0.45; cursor: not-allowed; }
         .cp-slider-val { width: 28px; text-align: right; font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
         .cp-submit-btn { width: 100%; padding: 13px; font-size: 1rem; font-weight: 700; border-radius: 10px; margin-top: 2px; }

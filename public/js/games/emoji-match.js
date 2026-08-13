@@ -56,14 +56,17 @@ window.GameClients['emoji-match'] = {
     const board = document.createElement('div');
     board.className = 'emoji-board';
     board.id = 'em-board';
-    board.style.gridTemplateColumns = `repeat(${this.cols}, 1fr)`;
+    const cols = window.innerWidth <= 359 && data.boardSize > 16 ? 4 : data.cols;
+    board.style.setProperty('--emoji-cols', cols);
     c.replaceChildren(turn, board);
 
     const boardEl = document.getElementById('em-board');
     for (let i = 0; i < data.boardSize; i++) {
-      const cell = document.createElement('div');
+      const cell = document.createElement('button');
+      cell.type = 'button';
       cell.className = 'emoji-cell hidden';
       cell.dataset.index = i;
+      cell.setAttribute('aria-label', `Card ${i + 1}, hidden`);
       cell.addEventListener('click', () => {
         // BUG FIX: prevent triple-clicks and clicks during animation
         if (this.locked || this.matched[i] || this.revealed[i]) return;
@@ -81,6 +84,7 @@ window.GameClients['emoji-match'] = {
     if (cell) {
       cell.className = 'emoji-cell revealed';
       cell.textContent = emoji;
+      cell.setAttribute('aria-label', `Card ${index + 1}, ${emoji}`);
     }
     // BUG FIX: after second flip, lock to prevent third click
     if (this.flippedCount >= 2) {
@@ -93,7 +97,11 @@ window.GameClients['emoji-match'] = {
       this.matched[i] = true;
       this.revealed[i] = true;
       const cell = document.querySelector(`[data-index="${i}"]`);
-      if (cell) cell.className = 'emoji-cell matched';
+      if (cell) {
+        cell.className = 'emoji-cell matched';
+        cell.disabled = true;
+        cell.setAttribute('aria-label', `Card ${i + 1}, matched ${this.board[i]}`);
+      }
     });
 
     const turn = document.getElementById('em-turn');
@@ -117,6 +125,7 @@ window.GameClients['emoji-match'] = {
         if (cell) {
           cell.className = 'emoji-cell hidden';
           cell.textContent = '';
+          cell.setAttribute('aria-label', `Card ${i + 1}, hidden`);
         }
       });
       this.flippedCount = 0;
