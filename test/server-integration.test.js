@@ -64,3 +64,42 @@ test('Socket.IO contracts return typed errors, secure identities, and safe healt
   assert.equal(typeof health.eventLoop.delayMeanMs, 'number');
   assert.equal(Object.prototype.hasOwnProperty.call(health, 'reconnectToken'), false);
 });
+
+test('Hangman letter and whole-word clicks pass the public Socket.IO contract and mutate state', async t => {
+  await new Promise(resolve => runtime.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    rooms._resetForTests();
+    await new Promise(resolve => runtime.io.close(resolve));
+  });
+  const url = `http://127.0.0.1:${runtime.server.address().port}`;
+  const host = await connect(url);
+  t.after(() => host.disconnect());
+
+  const created = await emitAck(host, 'room:create', { name: 'Alice' });
+  assert.equal((await emitAck(host, 'room:addBot', {})).ok, true);
+  assert.equal((await emitAck(host, 'room:startGame', { gameId: 'hangman' })).ok, true);
+  await new Promise(resolve => setTimeout(resolve, 550));
+
+  const room = rooms.getRoom(created.code);
+  const word = room.gameState.word;
+  const correctLetter = word[0];
+  const wrongLetter = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(letter => !word.includes(letter));
+
+  const correctAck = await emitAck(host, 'game:event', {
+    event: 'guess_letter', data: { letter: correctLetter },
+  });
+  assert.equal(correctAck.ok, true);
+  assert.ok(room.gameState.correctLetters.includes(correctLetter));
+
+  const wrongAck = await emitAck(host, 'game:event', {
+    event: 'guess_letter', data: { letter: wrongLetter },
+  });
+  assert.equal(wrongAck.ok, true);
+  assert.ok(room.gameState.wrongLetters.includes(wrongLetter));
+
+  const wordAck = await emitAck(host, 'game:event', {
+    event: 'guess_word', data: { word: 'WRONGWORD' },
+  });
+  assert.equal(wordAck.ok, true);
+  assert.equal(room.gameState.wordAttempts.get(host.id), 1);
+});

@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const rooms = require('../server/rooms');
 const contracts = require('../server/contracts');
 const { TimerRegistry } = require('../server/timer-registry');
@@ -19,6 +21,21 @@ test('contracts reject malformed and oversized Socket.IO envelopes', () => {
   assert.equal(contracts.validate('game:event', { event: 'tap', data: [] }), false);
   assert.equal(contracts.validate('game:event', { event: 'tap', data: { text: 'x'.repeat(5000) } }), false);
   assert.equal(contracts.validate('game:event', { event: 'tap', data: {} }), true);
+  assert.equal(contracts.validate('game:event', { event: 'guess_letter', data: { letter: 'A' } }), true);
+  assert.equal(contracts.validate('game:event', { event: 'guess_word', data: { word: 'ALGORITHM' } }), true);
+});
+
+test('every browser game event name passes the server envelope contract', () => {
+  const gamesDir = path.join(__dirname, '..', 'public', 'js', 'games');
+  const source = fs.readdirSync(gamesDir)
+    .filter(file => file.endsWith('.js'))
+    .map(file => fs.readFileSync(path.join(gamesDir, file), 'utf8'))
+    .join('\n');
+  const eventNames = new Set([...source.matchAll(/event:\s*['"]([a-z0-9_:-]+)['"]/g)].map(match => match[1]));
+  assert.ok(eventNames.size >= 10, `expected public action inventory, found ${eventNames.size}`);
+  for (const event of eventNames) {
+    assert.equal(contracts.validate('game:event', { event, data: {} }), true, `${event} must pass the server envelope`);
+  }
 });
 
 test('secure reconnect requires the token, rotates it, and preserves host identity', () => {

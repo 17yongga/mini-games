@@ -48,7 +48,7 @@ function validateStartGame(value) {
 
 function validateGameEvent(value) {
   if (!isPlainObject(value) || !exactKeys(value, ['event', 'data']) ||
-      !requiredString(value.event, MAX_EVENT_LENGTH, /^[a-z][a-z0-9:-]*$/)) return false;
+      !requiredString(value.event, MAX_EVENT_LENGTH, /^[a-z][a-z0-9_:-]*$/)) return false;
   if (!isPlainObject(value.data)) return false;
   try {
     return Buffer.byteLength(JSON.stringify(value.data), 'utf8') <= MAX_GAME_DATA_BYTES;
