@@ -1,5 +1,5 @@
 # Mini Games — STATUS.md
-> Updated: 2026-08-12
+> Updated: 2026-08-13
 
 ## What's Live
 - **Canonical URL:** https://play.gary-yong.com/
@@ -14,10 +14,11 @@
 - Main server: `server/server.js`
 - Bot framework: `server/bots.js` — supports both inline polling (legacy 9 games) and getBotMove() return pattern (newer 4 games) via unified dispatcher
 
-## Current State (2026-08-12)
-- All 13 games audited, remediated, independently reviewed, and deployed; current release `ee33afd`
+## Current State (2026-08-13)
+- All 13 games audited, remediated, independently reviewed, and deployed; current release `3c8a4d1`
+- Hangman interaction regression fixed: strict Socket.IO envelope validation had rejected `guess_letter` and `guess_word` because underscores were excluded, making buttons animate locally without registering server-side. The contract now accepts underscores, all public client event names are checked against it, and a real Socket.IO Hangman mutation test covers letter and whole-word guesses.
 - Canonical subdomain, dedicated TLS certificate, root asset routing, health endpoint, and Socket.IO transport verified
-- Final release gate: 54/54 tests, 13 guides/13 clients, desktop/mobile browser smoke, all 13 active game states across 6 mobile viewports (312 assertions), 13 tutorials across 3 mobile viewports, short-landscape tutorial containment, Color Picker results, bounded 20-player Tap Frenzy leaderboard, long-name results, focused-input visibility, `npm audit --omit=dev` = 0 vulnerabilities
+- Final release gate: 56/56 tests, live Hangman action acknowledgement/mutation smoke, 13 guides/13 clients, desktop/mobile browser smoke, all 13 active game states across 6 mobile viewports (312 assertions), 13 tutorials across 3 mobile viewports, short-landscape tutorial containment, Color Picker results, bounded 20-player Tap Frenzy leaderboard, long-name results, focused-input visibility, `npm audit --omit=dev` = 0 vulnerabilities
 - Production rollback: `/home/ubuntu/mini-games-previous-20260813-024053` → prior release `05aa0e8`; original pre-mobile release `3613149` also retained
 - **New game development PAUSED** — 13 games is enough. Focus is bot quality + UX polish.
 - **Comprehensive audit complete** — see `AUDIT-2026-08-12.md`
