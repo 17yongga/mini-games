@@ -53,6 +53,16 @@ const games = {
           client.onState(state);
           scrollTo(0,0);
         }, { id, state });
+        if (viewport.name === 'keyboard-open' && ['word-scramble','type-racer','math-blitz','number-guess'].includes(id)) {
+          const input = page.locator('#game-container input').first();
+          await input.focus();
+          await page.waitForTimeout(150);
+          const intersectsViewport = await input.evaluate(el => {
+            const rect = el.getBoundingClientRect();
+            return rect.bottom > 0 && rect.top < innerHeight;
+          });
+          assert.equal(intersectsViewport,true,`${viewport.name}/${id}: focused input must intersect the visual viewport`);
+        }
         const metrics = await page.evaluate(() => {
           const container=document.querySelector('#game-container');
           const cr=container.getBoundingClientRect();

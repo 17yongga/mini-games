@@ -15,8 +15,10 @@ window.GameClients['type-racer'] = {
     this.finished  = false;
     this.roundId   = null;
     if (this._throttleTimer) clearTimeout(this._throttleTimer);
+    if (this._focusTimer)    clearTimeout(this._focusTimer);
     if (this._rafId)         cancelAnimationFrame(this._rafId);
     this._throttleTimer = null;
+    this._focusTimer    = null;
     this._rafId         = null;
     this._timerStart    = null;
     this._timerDuration = null;
@@ -179,7 +181,14 @@ window.GameClients['type-racer'] = {
         status.textContent = `Round ${data.round}/${data.totalRounds} — Type it!`;
 
         this._startTimer(data.timeLimit);
-        setTimeout(() => { const i = this._el('tr-input'); if (i) i.focus(); }, 100);
+        if (this._focusTimer) clearTimeout(this._focusTimer);
+        this._focusTimer = setTimeout(() => {
+          this._focusTimer = null;
+          const i = this._el('tr-input');
+          if (!i) return;
+          i.focus({ preventScroll: true });
+          i.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }, 100);
 
       } else if (data.phase === 'finished-round') {
         this.finished = true;
