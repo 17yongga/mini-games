@@ -15,12 +15,13 @@
 - Bot framework: `server/bots.js` — supports both inline polling (legacy 9 games) and getBotMove() return pattern (newer 4 games) via unified dispatcher
 
 ## Current State (2026-08-12)
-- All 13 games audited, remediated, independently reviewed, and deployed as release `3613149`
+- All 13 games audited, remediated, independently reviewed, and deployed; current release `b9b9d82`
 - Canonical subdomain, dedicated TLS certificate, root asset routing, health endpoint, and Socket.IO transport verified
-- Final release gate: 54/54 tests, 47 JavaScript syntax checks, 13 guides/13 clients, desktop/mobile browser smoke, `npm audit --omit=dev` = 0 vulnerabilities
-- Production rollback: `/home/ubuntu/mini-games-previous-20260812-172317` and `/home/ubuntu/backups/mini-games-20260812-172317`
+- Final release gate: 54/54 tests, 13 guides/13 clients, desktop/mobile browser smoke, all 13 active game states across 6 mobile viewports (312 assertions), `npm audit --omit=dev` = 0 vulnerabilities
+- Production rollback: `/home/ubuntu/mini-games-previous-20260813-021958` → prior release `3613149`
 - **New game development PAUSED** — 13 games is enough. Focus is bot quality + UX polish.
 - **Comprehensive audit complete** — see `AUDIT-2026-08-12.md`
+- **Active-state mobile audit complete** — see `MOBILE-AUDIT-2026-08-12.md`; Hangman keyboard/canvas clipping, Math Blitz action overflow, Emoji Match semantics/targets, Color Picker slider targets, short-height layouts, and fixed connection badge overlap remediated.
 
 ## Completed This Sprint (2026-08-12)
 - ✅ **Server authority/security:** Secure rotating reconnect tokens, strict Socket.IO contracts, generic identity migration, rate/room limits, timer containment, active-room TTL, health metrics, and zero known production dependency vulnerabilities.
@@ -29,6 +30,7 @@
 - ✅ **Rendering security:** Removed player-name HTML injection across all game clients and added exhaustive malicious-name DOM/static tests.
 - ✅ **Arcade Field Guide:** Distinctive non-purple/non-blue editorial system, desktop/mobile layouts, keyboard/touch controls, reduced-motion support, accessible semantics, and complete game guides.
 - ✅ **Domain migration:** `play.gary-yong.com` is live with dedicated TLS; the old `/play/` path redirects while the old Socket.IO route remains temporarily compatible.
+- ✅ **All-game mobile remediation:** Exercised every active game at 320×568, 360×640, 375×667, 390×844, 375×400, and 667×375; added permanent Playwright geometry, overflow, semantics, and 44px touch-target gates.
 
 ## Completed This Sprint (2026-03-17)
 - ✅ **Tutorial overlays:** Added how-to-play tutorial to all 13 games. Shows animated overlay at round start with game-specific instructions. reaction-race has 4.5s ghost round demo; trivia-blitz and others use overlay with rule descriptions. Overlay positions correctly across all screen sizes.
