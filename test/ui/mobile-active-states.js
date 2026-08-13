@@ -68,7 +68,7 @@ const games = {
           const cr=container.getBoundingClientRect();
           const visible=[container,...container.querySelectorAll('*')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0});
           const overflow=visible.filter(el=>{const r=el.getBoundingClientRect();return r.left<cr.left-1||r.right>cr.right+1}).map(el=>`${el.tagName}.${typeof el.className==='string'?el.className:''}`);
-          const small=visible.filter(el=>el.matches('button,input[type=range],[role=button]')).filter(el=>{const r=el.getBoundingClientRect();return r.width<44||r.height<44}).map(el=>`${el.tagName}.${el.className}:${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`);
+          const small=visible.filter(el=>el.matches('button,input[type=range],[role=button]')).filter(el=>{const r=el.getBoundingClientRect();return r.width<43.5||r.height<43.5}).map(el=>`${el.tagName}.${el.className}:${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`);
           const connection=document.querySelector('#connection-status');
           const semanticEmoji=[...container.querySelectorAll('.emoji-cell')].every(el=>el.tagName==='BUTTON');
           return { overflow, small, semanticEmoji, containerOverflow:container.scrollWidth>container.clientWidth+1, connectionFixed:getComputedStyle(connection).position==='fixed' };

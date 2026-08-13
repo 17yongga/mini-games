@@ -8,7 +8,7 @@
     "dev": "node server/server.js",
     "test": "node --test test/*.test.js",
     "test:ui": "node test/ui/arcade-field-guide.test.js && node test/ui/browser-smoke.js",
-    "test:mobile": "node test/ui/mobile-active-states.js"
+    "test:mobile": "node test/ui/mobile-active-states.js && node test/ui/mobile-supporting-states.js"
   },
   "dependencies": {
     "express": "^4.22.1",
