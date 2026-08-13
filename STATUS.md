@@ -15,10 +15,10 @@
 - Bot framework: `server/bots.js` — supports both inline polling (legacy 9 games) and getBotMove() return pattern (newer 4 games) via unified dispatcher
 
 ## Current State (2026-08-12)
-- All 13 games audited, remediated, independently reviewed, and deployed; current release `b9b9d82`
+- All 13 games audited, remediated, independently reviewed, and deployed; current release `05aa0e8`
 - Canonical subdomain, dedicated TLS certificate, root asset routing, health endpoint, and Socket.IO transport verified
-- Final release gate: 54/54 tests, 13 guides/13 clients, desktop/mobile browser smoke, all 13 active game states across 6 mobile viewports (312 assertions), `npm audit --omit=dev` = 0 vulnerabilities
-- Production rollback: `/home/ubuntu/mini-games-previous-20260813-021958` → prior release `3613149`
+- Final release gate: 54/54 tests, 13 guides/13 clients, desktop/mobile browser smoke, all 13 active game states across 6 mobile viewports (312 assertions), 13 tutorials across 3 mobile viewports, long-name results, focused-input visibility, `npm audit --omit=dev` = 0 vulnerabilities
+- Production rollback: `/home/ubuntu/mini-games-previous-20260813-023039` → prior release `d33e488`; original pre-mobile release `3613149` also retained
 - **New game development PAUSED** — 13 games is enough. Focus is bot quality + UX polish.
 - **Comprehensive audit complete** — see `AUDIT-2026-08-12.md`
 - **Active-state mobile audit complete** — see `MOBILE-AUDIT-2026-08-12.md`; Hangman keyboard/canvas clipping, Math Blitz action overflow, Emoji Match semantics/targets, Color Picker slider targets, short-height layouts, and fixed connection badge overlap remediated.
