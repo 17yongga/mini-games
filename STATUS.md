@@ -1,5 +1,5 @@
 # Mini Games — STATUS.md
-> Updated: 2026-08-13
+> Updated: 2026-08-18
 
 ## What's Live
 - **Canonical URL:** https://play.gary-yong.com/
@@ -8,6 +8,7 @@
 - **13 games:** Emoji Match, Math Blitz, Reaction Race, Simon Says, Tap Frenzy, Trivia Blitz, Word Scramble, Type Racer, Color Clash, Hangman, Number Guess, Geography Quiz, Color Picker
 - **Features:** Room codes, shareable links, AI bots (3 difficulty levels), secure token-based reconnect with state restore, server-authoritative timing, complete guides, responsive Arcade Field Guide UI, no login required
 - **Also listed on:** gary-yong.com/projects.html (Previous Projects section)
+- **Related standalone release:** [Life, Again · 人生重启](https://life.gary-yong.com/) — bilingual deterministic life simulator with 56 talents, 263 storylets, integrity-bound replay, and local profile persistence
 
 ## Architecture
 - Plugin system — each game is a server module + client module, auto-loaded from `server/games/`
@@ -15,6 +16,7 @@
 - Bot framework: `server/bots.js` — supports both inline polling (legacy 9 games) and getBotMove() return pattern (newer 4 games) via unified dispatcher
 
 ## Current State (2026-08-13)
+- Standalone **Life, Again · 人生重启** release `20260818-175809` is live at `life.gary-yong.com`; 53 unit/content/storage/replay tests and 39 applicable production browser/accessibility checks passed across four viewport classes.
 - All 13 games audited, remediated, independently reviewed, and deployed; current release `3c8a4d1`
 - Hangman interaction regression fixed: strict Socket.IO envelope validation had rejected `guess_letter` and `guess_word` because underscores were excluded, making buttons animate locally without registering server-side. The contract now accepts underscores, all public client event names are checked against it, and a real Socket.IO Hangman mutation test covers letter and whole-word guesses.
 - Canonical subdomain, dedicated TLS certificate, root asset routing, health endpoint, and Socket.IO transport verified
